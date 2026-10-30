@@ -36,6 +36,27 @@ data class SurveyRecord(
         }
 }
 
+/**
+ * [slotKey] 시간대 응답을 기록한다. 같은 시간대의 이전 응답(삭제된 것 포함)은 대체하고,
+ * 다시 응답해도 "원래 예보" 는 처음 응답할 때의 예보로 유지한다.
+ */
+fun List<SurveyRecord>.withAnswer(
+    slotKey: String,
+    apparentTemperature: Double,
+    reported: FeelsBand,
+    predicted: FeelsBand,
+    nowMillis: Long,
+): List<SurveyRecord> {
+    val existing = firstOrNull { it.slotKey == slotKey && !it.isDeleted }
+    return filterNot { it.slotKey == slotKey } + SurveyRecord(
+        slotKey = slotKey,
+        apparentTemperature = apparentTemperature,
+        reported = reported,
+        answeredAtMillis = nowMillis,
+        predicted = existing?.predicted ?: predicted,
+    )
+}
+
 /** 계절 이름 표시용 (한국 기준 3개월씩). 계산은 날짜 거리로 부드럽게 한다. */
 enum class Season(val label: String, val representative: MonthDay) {
     SPRING("봄", MonthDay.of(4, 15)),
