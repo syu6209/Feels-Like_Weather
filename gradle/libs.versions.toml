@@ -12,6 +12,7 @@ navigationCompose = "2.9.5"
 datastore = "1.1.7"
 playServicesLocation = "21.3.0"
 coroutines = "1.10.2"
+robolectric = "4.16"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,7 @@ play-services-location = { group = "com.google.android.gms", name = "play-servic
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 json = { group = "org.json", name = "json", version = "20240303" }
 
 [plugins]
