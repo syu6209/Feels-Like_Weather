@@ -167,7 +167,7 @@ fun SettingsScreen(
     if (showGraph) {
         FeelsInfoSheet(
             myThresholds = mine,
-            surveyCount = activeCount,
+            surveys = userData.surveys,
             currentApparent = vm.weather.value.forecast?.current?.apparentTemperature,
             onDismiss = { showGraph = false },
         )

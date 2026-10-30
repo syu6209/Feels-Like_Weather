@@ -47,6 +47,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.time.LocalDate
 import kotlin.random.Random
 
 /**
@@ -64,6 +65,15 @@ class ScreenshotTest {
     private val forecast: WeatherForecast = OpenMeteoClient.parseForecast(
         JSONObject(javaClass.classLoader!!.getResource("forecast_seoul.json").readText()),
         fetchedAtMillis = 0L,
+    )
+
+    /** 계절별 그래프가 달라 보이도록 여름·가을 응답을 섞은 예시 기록. */
+    private val sampleSurveys = listOf(
+        SurveyRecord("2026-10-29T15:00", 18.0, FeelsBand.WARM, 1, FeelsBand.COOL),
+        SurveyRecord("2026-10-30T09:00", 18.5, FeelsBand.WARM, 2, FeelsBand.COOL),
+        SurveyRecord("2026-10-30T07:00", 5.0, FeelsBand.COLD, 3, FeelsBand.CHILLY),
+        SurveyRecord("2026-07-20T15:00", 27.0, FeelsBand.WARM, 4, FeelsBand.HOT),
+        SurveyRecord("2026-07-21T15:00", 24.0, FeelsBand.COOL, 5, FeelsBand.WARM),
     )
 
     private fun feels(
@@ -130,12 +140,12 @@ class ScreenshotTest {
 
     @Test
     fun feelsForecastCard() = shot("02_feels_forecast") {
-        Page { FeelsForecastCard(feels(), surveyCount = 0, onSelectSlot = {}) }
+        Page { FeelsForecastCard(feels(), surveys = emptyList(), onSelectSlot = {}) }
     }
 
     @Test
     fun feelsForecastCardDark() = shot("02b_feels_forecast_dark", dark = true) {
-        Page { FeelsForecastCard(feels(selectIndexFromCurrent = 2), surveyCount = 3, onSelectSlot = {}) }
+        Page { FeelsForecastCard(feels(selectIndexFromCurrent = 2), surveys = sampleSurveys, onSelectSlot = {}) }
     }
 
     @Test
@@ -169,9 +179,9 @@ class ScreenshotTest {
     fun feelsForecastCorrected() = shot("07_feels_corrected") {
         Page {
             // 반응 문구가 보이는 2초 동안
-            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD, reacting = true), surveyCount = 2, onSelectSlot = {})
+            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD, reacting = true), surveys = sampleSurveys, onSelectSlot = {})
             // 반응 이후: 새 구간 브리핑 + "선선함 → 추움" 태그
-            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD), surveyCount = 2, onSelectSlot = {})
+            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD), surveys = sampleSurveys, onSelectSlot = {})
             FeelsSurveyCard(feels(answerCurrent = FeelsBand.COLD), onAnswer = {})
         }
     }
@@ -189,7 +199,7 @@ class ScreenshotTest {
         androidx.compose.material3.Surface {
             SurveyHistoryContent(
                 records = records,
-                thresholds = FeelsLearner.estimate(records, now),
+                thresholds = FeelsLearner.estimate(records, LocalDate.of(2026, 10, 30)),
                 nowMillis = now,
                 onDelete = {},
                 onRestore = {},
@@ -208,14 +218,7 @@ class ScreenshotTest {
 
     @Test
     fun graphs() = shot("06_graphs") {
-        val mine = FeelsLearner.estimate(
-            listOf(
-                SurveyRecord("a", 18.0, FeelsBand.WARM, 1),
-                SurveyRecord("b", 18.5, FeelsBand.WARM, 2),
-                SurveyRecord("c", 5.0, FeelsBand.COLD, 3),
-            ),
-            nowMillis = 3,
-        )
+        val mine = FeelsLearner.estimate(sampleSurveys, LocalDate.of(2026, 10, 30))
         androidx.compose.material3.Surface {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 BandGraph(FeelsThresholds.DEFAULT, marker = 15.0)

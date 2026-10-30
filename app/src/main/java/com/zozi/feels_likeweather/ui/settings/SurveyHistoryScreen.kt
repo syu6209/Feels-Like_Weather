@@ -46,13 +46,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zozi.feels_likeweather.domain.FeelsLearner
 import com.zozi.feels_likeweather.domain.FeelsThresholds
+import com.zozi.feels_likeweather.domain.Season
 import com.zozi.feels_likeweather.domain.SurveyRecord
 import com.zozi.feels_likeweather.ui.components.BandGraph
 import com.zozi.feels_likeweather.ui.components.ThemedSystemBarIcons
 import com.zozi.feels_likeweather.ui.main.MainViewModel
 import com.zozi.feels_likeweather.ui.theme.composeColor
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -115,6 +118,7 @@ fun SurveyHistoryContent(
     modifier: Modifier = Modifier,
 ) {
     val visible = FeelsLearner.purge(records, nowMillis)
+    val today = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
     val active = visible.filterNot { it.isDeleted }.sortedByDescending { it.slotKey }
     val deleted = visible.filter { it.isDeleted }.sortedByDescending { it.deletedAtMillis }
 
@@ -131,7 +135,10 @@ fun SurveyHistoryContent(
                 Text("내 체감 그래프", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
                     if (active.isEmpty()) "반영 중인 응답이 없어 기본 구간과 같아요."
-                    else "응답 ${active.size}개를 반영했어요. 최근 응답일수록 크게 반영돼요(60일마다 절반).",
+                    else "응답 ${active.size}개 중 지금(${Season.of(today).label})과 비슷한 시기의 응답 " +
+                        "${FeelsLearner.inSeasonCount(records, today)}개를 중심으로 반영했어요. " +
+                        "최신 ${FeelsLearner.FULL_WEIGHT_COUNT}개 이후 응답은 점점 덜 반영되고 " +
+                        "${FeelsLearner.ZERO_WEIGHT_COUNT}번째부터는 반영하지 않아요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

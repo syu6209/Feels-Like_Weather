@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.style.TextDecoration
 import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.SurveyRecord
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
@@ -68,11 +69,12 @@ import kotlin.math.roundToInt
 @Composable
 fun FeelsForecastCard(
     feels: FeelsUi,
-    surveyCount: Int,
+    surveys: List<SurveyRecord>,
     onSelectSlot: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showInfo by rememberSaveable { mutableStateOf(false) }
+    val surveyCount = surveys.count { !it.isDeleted }
     val selected = feels.selected
     val band = selected.displayBand
     val reaction = feels.reaction
@@ -139,7 +141,7 @@ fun FeelsForecastCard(
     if (showInfo) {
         FeelsInfoSheet(
             myThresholds = feels.myThresholds,
-            surveyCount = surveyCount,
+            surveys = surveys,
             currentApparent = selected.apparent,
             onDismiss = { showInfo = false },
         )

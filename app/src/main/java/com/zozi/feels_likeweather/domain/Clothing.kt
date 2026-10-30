@@ -219,7 +219,8 @@ object ClothingRecommender {
     /**
      * 활동 시간 동안의 옷차림 (규칙 기반).
      *  - 이너·상의·하의·신발: 가장 오래 머무는 구간 기준 (중간에 바꿔 입기 어려움)
-     *  - 겉옷·소품: 가장 추운 구간 기준, 구간이 바뀌면 "벗기 쉬운 겉옷" 설명을 붙임
+     *  - 겉옷: 가장 추운 구간 기준(그 구간이 1시간뿐이면 한 단계 가볍게), 구간이 바뀌면 "벗기 쉬운 겉옷" 설명을 붙임
+     *  - 소품: 가장 추운 구간 기준
      *  - 가장 더운 구간이 더 덥다면 그 구간의 가장 가벼운 상의를 "더울 땐 이것만" 으로 추가
      */
     fun outfit(ageGroup: AgeGroup, plan: ActivityPlan): List<RecommendedItem> {
@@ -227,6 +228,7 @@ object ClothingRecommender {
         if (plan.bandSpan == 0) return core.map { RecommendedItem(it) }
 
         val cold = itemsFor(ageGroup, plan.coldBand)
+        val outer = itemsFor(ageGroup, plan.outerBand)
         val warm = itemsFor(ageGroup, plan.warmBand)
         val changes = plan.coldBand != plan.coreBand
         val result = LinkedHashMap<ClothingItem, RecommendedItem>()
@@ -235,7 +237,7 @@ object ClothingRecommender {
         }
 
         core.filter { it.layer in BASE_LAYERS }.forEach { add(it) }
-        (if (changes) cold else core).filter { it.layer == ClothingLayer.OUTER }
+        (if (changes) outer else core).filter { it.layer == ClothingLayer.OUTER }
             .forEach { add(it, if (changes) plan.outerNote else null) }
         (cold + core).filter { it.layer == ClothingLayer.ACCESSORY }
             .forEach { add(it, if (changes && it !in core) "추울 때 · 가방에" else null) }
