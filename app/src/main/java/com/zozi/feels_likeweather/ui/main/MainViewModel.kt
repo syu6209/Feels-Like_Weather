@@ -3,6 +3,7 @@ package com.zozi.feels_likeweather.ui.main
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.zozi.feels_likeweather.data.cache.ForecastCache
 import com.zozi.feels_likeweather.data.location.LocationClient
 import com.zozi.feels_likeweather.data.location.PlaceNameResolver
 import com.zozi.feels_likeweather.data.model.Place
@@ -21,6 +22,9 @@ import com.zozi.feels_likeweather.domain.Profile
 import com.zozi.feels_likeweather.domain.SurveyRecord
 import com.zozi.feels_likeweather.domain.TimeSlot
 import com.zozi.feels_likeweather.domain.TimeSlots
+import com.zozi.feels_likeweather.domain.withAnswer
+import com.zozi.feels_likeweather.widget.WidgetUpdater
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -29,6 +33,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -36,6 +43,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -115,12 +123,14 @@ fun buildSlots(
     }
 }
 
+@OptIn(FlowPreview::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val api = OpenMeteoClient()
     private val locationClient = LocationClient(app)
     private val placeResolver = PlaceNameResolver(app)
     private val prefs = AppPreferences(app)
+    private val forecastCache = ForecastCache(app)
 
     private val _weather = MutableStateFlow(WeatherState())
     val weather: StateFlow<WeatherState> = _weather.asStateFlow()
@@ -230,7 +240,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         Triple(location.latitude, location.longitude, resolved ?: "현재 위치")
                     }
                 }
-                val forecast = api.fetchForecast(lat, lon)
+                val json = api.fetchForecastJson(lat, lon)
+                val forecast = OpenMeteoClient.parseForecast(JSONObject(json), System.currentTimeMillis())
+                // 위젯이 앱 없이도 그릴 수 있도록 마지막 예보와 좌표를 저장하고 위젯을 갱신한다.
+                forecastCache.save(json, name, lat, lon)
+                WidgetUpdater.updateAll(getApplication())
                 _weather.value = WeatherState(
                     loading = false,
                     forecast = forecast,
@@ -284,16 +298,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val before = myThresholds.value
-            val existing = userData.value.surveys.firstOrNull { it.slotKey == slot.slot.key && !it.isDeleted }
-            val records = userData.value.surveys.filterNot { it.slotKey == slot.slot.key } +
-                SurveyRecord(
-                    slotKey = slot.slot.key,
-                    apparentTemperature = slot.apparent,
-                    reported = reported,
-                    answeredAtMillis = now,
-                    // 다시 응답해도 "원래 예보" 는 처음 응답할 때의 예보로 유지한다.
-                    predicted = existing?.predicted ?: slot.myBand,
-                )
+            val records = userData.value.surveys.withAnswer(slot.slot.key, slot.apparent, reported, slot.myBand, now)
 
             // 카드에 보이던 구간과 응답이 다르면 반응 문구 → 새 구간 브리핑 순서로 전환한다.
             val shown = slot.displayBand
@@ -401,6 +406,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (FeelsLearner.purge(surveys, System.currentTimeMillis()).size != surveys.size) {
                 prefs.saveSurveys(surveys)
             }
+        }
+        // 앱에서 설문·프로필이 바뀌면 위젯에도 반영한다.
+        viewModelScope.launch {
+            prefs.userData
+                .map { it.surveys to it.profiles }
+                .distinctUntilChanged()
+                .drop(1)
+                .debounce(500)
+                .collect { WidgetUpdater.updateAll(getApplication()) }
         }
     }
 

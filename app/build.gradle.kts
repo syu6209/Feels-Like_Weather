@@ -57,6 +57,8 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
     // org.json is part of the Android framework; unit tests on the JVM need the real implementation.
     testImplementation(libs.json)

@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Feels-Like Weather</string>
+    <string name="widget_feels_name">체감 보정 예보</string>
+    <string name="widget_feels_description">내 체감 기준의 지금 체감온도와 브리핑, 체감 설문</string>
+    <string name="widget_clothing_name">옷차림 추천</string>
+    <string name="widget_clothing_description">고른 프로필의 활동 시간 옷차림 추천</string>
 </resources>

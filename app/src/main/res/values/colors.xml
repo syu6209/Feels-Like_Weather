@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- 위젯 안쪽 버튼 배경 (위젯 반투명 버튼) -->
+    <color name="widget_container">#1A6650A4</color>
 </resources>

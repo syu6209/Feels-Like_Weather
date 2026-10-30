@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 위젯 안쪽 버튼·칸 배경. 반투명이라 틴트 대신 색 리소스(낮/밤)를 직접 쓴다. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_container" />
+    <corners android:radius="10dp" />
+</shape>
