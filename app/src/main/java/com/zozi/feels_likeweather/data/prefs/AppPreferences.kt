@@ -29,6 +29,8 @@ data class UserData(
     /** null 이면 현재 위치 사용. */
     val selectedPlace: Place? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** 옷차림 추천에서 마지막으로 고른 프로필. */
+    val selectedProfileId: String = Profile.MINE_ID,
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "feels_like")
@@ -42,6 +44,7 @@ class AppPreferences(private val context: Context) {
         val SAVED_PLACES = stringPreferencesKey("saved_places")
         val SELECTED_PLACE = stringPreferencesKey("selected_place")
         val THEME = stringPreferencesKey("theme")
+        val SELECTED_PROFILE = stringPreferencesKey("selected_profile")
     }
 
     val userData: Flow<UserData> = context.dataStore.data.map { p ->
@@ -52,6 +55,7 @@ class AppPreferences(private val context: Context) {
             savedPlaces = p[Keys.SAVED_PLACES]?.let(Codec::decodePlaces).orEmpty(),
             selectedPlace = p[Keys.SELECTED_PLACE]?.let { runCatching { Codec.decodePlace(JSONObject(it)) }.getOrNull() },
             themeMode = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
+            selectedProfileId = p[Keys.SELECTED_PROFILE] ?: Profile.MINE_ID,
         )
     }
 
@@ -79,6 +83,8 @@ class AppPreferences(private val context: Context) {
     }
 
     suspend fun saveThemeMode(mode: ThemeMode) = context.dataStore.edit { it[Keys.THEME] = mode.name }
+
+    suspend fun saveSelectedProfile(id: String) = context.dataStore.edit { it[Keys.SELECTED_PROFILE] = id }
 
     private fun ensureMine(profiles: List<Profile>): List<Profile> =
         if (profiles.any { it.isMine }) profiles else listOf(Profile.defaults.first()) + profiles

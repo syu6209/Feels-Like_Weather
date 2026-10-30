@@ -47,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +61,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zozi.feels_likeweather.data.model.weatherDescription
-import com.zozi.feels_likeweather.domain.Profile
 import com.zozi.feels_likeweather.ui.cards.ClothingCard
 import com.zozi.feels_likeweather.ui.cards.DailyForecastCard
 import com.zozi.feels_likeweather.ui.cards.FeelsForecastCard
@@ -89,7 +87,6 @@ fun MainScreen(
     val feels by vm.feels.collectAsStateWithLifecycle()
     val userData by vm.userData.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var selectedProfileId by rememberSaveable { mutableStateOf(Profile.MINE_ID) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -201,8 +198,8 @@ fun MainScreen(
                                     feels = f,
                                     forecast = forecast,
                                     profiles = userData.profiles,
-                                    selectedProfileId = selectedProfileId,
-                                    onSelectProfile = { selectedProfileId = it },
+                                    selectedProfileId = userData.selectedProfileId,
+                                    onSelectProfile = vm::selectProfile,
                                     onEditProfile = onEditProfile,
                                     onAddProfile = onAddProfile,
                                 )
