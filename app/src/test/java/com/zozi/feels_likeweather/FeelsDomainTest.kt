@@ -37,6 +37,8 @@ class FeelsDomainTest {
         val before = default.lowerBoundOf(FeelsBand.WARM)!!
         val after = updated.lowerBoundOf(FeelsBand.WARM)!!
         assertTrue("$after < $before", after < before)
+        // docs/FEELS_BANDS.md 의 예시: 20 + 0.5 × (17.5 − 20) = 18.75 → 18.8
+        assertEquals(18.8, after, 1e-9)
         // 다른 경계는 그대로
         assertEquals(default.lowerBoundOf(FeelsBand.HOT), updated.lowerBoundOf(FeelsBand.HOT))
         assertEquals(default.lowerBoundOf(FeelsBand.COOL), updated.lowerBoundOf(FeelsBand.COOL))

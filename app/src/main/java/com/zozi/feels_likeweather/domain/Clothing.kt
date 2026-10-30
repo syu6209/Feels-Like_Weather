@@ -179,7 +179,8 @@ object ClothingRecommender {
     ): List<ConditionalItem> {
         val rainy = w.maxPrecipitationProbability >= 40 || w.precipitationSum >= 0.5 || w.wet
         val rainReason = if (rainy) "강수확률 ${w.maxPrecipitationProbability}%" else "비 소식 없음"
-        val uv = w.maxUv
+        // WHO UV Index 는 정수로 반올림해 안내하므로, 판단과 표시 모두 반올림 값을 쓴다.
+        val uv = w.maxUv.roundToInt().toDouble()
         val uvText = "자외선 ${uv.roundToInt()} (${uvLevel(uv)})"
         val maxBand = w.maxApparent?.let(thresholds::bandOf) ?: band
         val minBand = w.minApparent?.let(thresholds::bandOf) ?: band
@@ -244,11 +245,11 @@ object ClothingRecommender {
         return tips
     }
 
-    fun uvLevel(uv: Double): String = when {
-        uv < 3 -> "낮음"
-        uv < 6 -> "보통"
-        uv < 8 -> "높음"
-        uv < 11 -> "매우 높음"
+    fun uvLevel(uv: Double): String = when (uv.roundToInt()) {
+        in Int.MIN_VALUE..2 -> "낮음"
+        in 3..5 -> "보통"
+        in 6..7 -> "높음"
+        in 8..10 -> "매우 높음"
         else -> "위험"
     }
 }
