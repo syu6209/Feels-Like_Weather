@@ -133,4 +133,26 @@ class ActivityPlanTest {
         val outfit = ClothingRecommender.outfit(AgeGroup.ADULT, plan)
         assertTrue(outfit.any { it.item == ClothingItem.GLOVES && it.note == "추울 때 · 가방에" })
     }
+
+    @Test
+    fun oneColdHourMakesOuterOneStepLighter() {
+        // 9시만 3°(추움), 10~15시 쌀쌀함 → 패딩 대신 쌀쌀함 기준 겉옷(트렌치코트·코트)
+        val plan = ActivityPlanner.plan(hours(9..9 to 3.0, 10..14 to 6.0))!!
+        assertEquals(FeelsBand.COLD, plan.coldBand)
+        assertEquals(FeelsBand.CHILLY, plan.outerBand)
+        assertTrue(plan.outerLightened)
+        assertTrue(plan.advice.first().contains("1시간뿐이라 겉옷은 한 단계 가볍게"))
+        val outers = ClothingRecommender.outfit(AgeGroup.ADULT, plan).filter { it.item.layer == ClothingLayer.OUTER }
+        assertEquals(listOf(ClothingItem.TRENCH_COAT, ClothingItem.COAT), outers.map { it.item })
+        // 장갑·목도리는 여전히 추울 때를 위해 가방에
+        assertTrue(ClothingRecommender.outfit(AgeGroup.ADULT, plan).any { it.item == ClothingItem.GLOVES })
+    }
+
+    @Test
+    fun twoColdHoursKeepColdOuter() {
+        val plan = ActivityPlanner.plan(hours(8..9 to 2.0, 10..17 to 10.0))!!
+        assertEquals(FeelsBand.COLD, plan.outerBand)
+        val outers = ClothingRecommender.outfit(AgeGroup.ADULT, plan).filter { it.item.layer == ClothingLayer.OUTER }
+        assertEquals(listOf(ClothingItem.PADDING), outers.map { it.item })
+    }
 }

@@ -42,7 +42,8 @@ enum class DayShape(val label: String) {
  * 활동 시간대 체감 분석 결과.
  *
  * @param coreBand 가장 오래 머무는 구간 (상의·하의·신발 기준)
- * @param coldBand 가장 추운 구간 (겉옷·소품 기준)
+ * @param coldBand 가장 추운 구간 (소품 기준)
+ * @param outerBand 겉옷 기준 구간. 가장 추운 구간이 1시간뿐이면 한 단계 가볍게(따뜻하게) 고른다.
  * @param warmBand 가장 따뜻한 구간
  * @param headline 구간이 바뀔 때의 안내 (구간이 하나면 null)
  * @param outerNote 겉옷에 붙일 짧은 설명 (예: "출발할 때")
@@ -53,6 +54,7 @@ data class ActivityPlan(
     val shape: DayShape,
     val coreBand: FeelsBand,
     val coldBand: FeelsBand,
+    val outerBand: FeelsBand,
     val warmBand: FeelsBand,
     val minApparent: Double,
     val maxApparent: Double,
@@ -69,8 +71,14 @@ data class ActivityPlan(
 
     val timeline: String get() = segments.joinToString(" → ") { "${it.rangeLabel} ${it.band.label}" }
 
+    /** 가장 추운 구간이 짧아 겉옷을 한 단계 가볍게 골랐는지. */
+    val outerLightened: Boolean get() = outerBand != coldBand
+
     companion object {
         const val BIG_SWING_DEGREES = 10.0
+
+        /** 가장 추운 구간이 이 시간보다 짧으면 겉옷을 한 단계 가볍게 고른다. */
+        const val SHORT_COLD_HOURS = 2
     }
 }
 
@@ -118,6 +126,13 @@ object ActivityPlanner {
             .first().key
         val cold = bands.minBy { it.ordinal }
         val warm = bands.maxBy { it.ordinal }
+        // 가장 추운 구간이 1시간뿐이면 그 1시간 때문에 하루 종일 무거운 겉옷을 들고 다니지 않도록 한 단계 가볍게
+        val coldHours = segments.filter { it.band == cold }.sumOf { it.hours }
+        val outer = if (coldHours < ActivityPlan.SHORT_COLD_HOURS && cold != warm) {
+            FeelsBand.entries[cold.ordinal + 1]
+        } else {
+            cold
+        }
         val min = hours.minOf { it.apparent }
         val max = hours.maxOf { it.apparent }
 
@@ -127,6 +142,7 @@ object ActivityPlanner {
             shape = shape,
             coreBand = core,
             coldBand = cold,
+            outerBand = outer,
             warmBand = warm,
             minApparent = min,
             maxApparent = max,
@@ -208,6 +224,10 @@ object ActivityPlanner {
     }
 
     private fun advice(p: ActivityPlan): List<String> = buildList {
+        if (p.outerLightened) {
+            val coldTimes = p.segments.filter { it.band == p.coldBand }.joinToString(", ") { it.rangeLabel }
+            add("가장 추운 $coldTimes(${p.coldBand.label})는 1시간뿐이라 겉옷은 한 단계 가볍게(${p.outerBand.label} 기준) 골랐어요.")
+        }
         if (p.bigSwing) {
             add(
                 "체감 차이가 커요(${p.minApparent.roundToInt()}°~${p.maxApparent.roundToInt()}°). " +
