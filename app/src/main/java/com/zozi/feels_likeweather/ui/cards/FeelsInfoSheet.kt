@@ -22,25 +22,34 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.FeelsLearner
 import com.zozi.feels_likeweather.domain.FeelsThresholds
+import com.zozi.feels_likeweather.domain.Season
+import com.zozi.feels_likeweather.domain.SurveyRecord
 import com.zozi.feels_likeweather.ui.components.BandGraph
 import com.zozi.feels_likeweather.ui.theme.composeColor
+import java.time.LocalDate
 
 /** 체감 구간 산정 방법: 기본 체감 그래프와 내 체감 그래프. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeelsInfoSheet(
     myThresholds: FeelsThresholds,
-    surveyCount: Int,
+    surveys: List<SurveyRecord>,
     currentApparent: Double?,
     onDismiss: () -> Unit,
+    today: LocalDate = LocalDate.now(),
 ) {
+    val surveyCount = surveys.count { !it.isDeleted }
+    val season = Season.of(today)
+    val inSeason = FeelsLearner.inSeasonCount(surveys, today)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -72,10 +81,10 @@ fun FeelsInfoSheet(
             BandGraph(FeelsThresholds.DEFAULT, marker = currentApparent)
 
             Spacer(Modifier.height(16.dp))
-            Text("내 체감 그래프", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("내 체감 그래프 · 지금(${season.label}) 기준", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 if (surveyCount == 0) "아직 설문 응답이 없어 기본값과 같아요. 체감 설문에 답하면 내 체감에 맞게 바뀌어요."
-                else "체감 설문 ${surveyCount}회 응답을 반영했어요",
+                else "응답 ${surveyCount}개 중 지금과 비슷한 시기의 응답 ${inSeason}개를 중심으로 반영했어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -84,6 +93,29 @@ fun FeelsInfoSheet(
 
             Spacer(Modifier.height(16.dp))
             BandTable(myThresholds)
+
+            if (surveyCount > 0) {
+                Spacer(Modifier.height(20.dp))
+                Text("계절별 내 체감", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "같은 온도도 계절에 따라 다르게 느껴져서, 계절마다 내 체감 구간을 따로 계산해요. " +
+                        "그 계절 응답이 없으면 다른 계절 응답으로 만든 평소 기준을 써요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val seasonal = remember(surveys, today.year) { FeelsLearner.seasonalEstimates(surveys, today.year) }
+                Season.entries.forEach { s ->
+                    val count = FeelsLearner.inSeasonCount(surveys, s.representative.atYear(today.year))
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "${s.label}${if (s == season) " (지금)" else ""} · 비슷한 시기 응답 ${count}개",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (s == season) FontWeight.Bold else FontWeight.Normal,
+                        color = if (s == season) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                    BandGraph(seasonal.getValue(s))
+                }
+            }
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
@@ -105,8 +137,12 @@ fun FeelsInfoSheet(
             Text(
                 "모든 설문 응답을 함께 보고, 각 분기점에서 '그 온도 이상으로 느꼈는지'를 가장 잘 설명하는 온도를 찾아요. " +
                     "응답이 적을 땐 기본값 근처에 머물고, 쌓일수록 내 응답 쪽으로 옮겨가요. " +
-                    "예) 18°가 '선선함'인데 '따뜻했음'을 고르면 '따뜻함' 시작 온도가 20° → 17.5°로 낮아져요. " +
-                    "예보와 같은 구간을 고른 응답도 지금 기준이 맞다는 근거가 되고, 최근 응답일수록 크게 반영돼요(60일마다 절반). " +
+                    "예) 18°가 '선선함'인데 '따뜻했음'을 고르면 '따뜻함' 시작 온도가 20° → 17°로 낮아져요. " +
+                    "예보와 같은 구간을 고른 응답도 지금 기준이 맞다는 근거가 돼요.\n\n" +
+                    "계절 적응: 지금과 날짜가 가까운 응답일수록 크게 반영해요(같은 시기 100%, 한 달 차이 약 65%, 75일 이상 0%). " +
+                    "다른 계절 응답은 '평소 기준'으로 쓰여, 새 계절이 시작돼도 기본값이 아니라 내 평소 기준에서 출발해요.\n\n" +
+                    "오래된 응답: 시간이 지났다고 잊지 않아요. 대신 응답이 쌓이면 최신 30개는 그대로, 그보다 오래된 응답은 점점 줄어 " +
+                    "90번째부터는 반영하지 않아요. 계절별로 따로 세서 겨울 응답이 많아도 지난여름 응답이 밀려나지 않아요.\n\n" +
                     "기록을 지우거나 되돌리면 그 응답을 빼거나 넣고 다시 계산해서, 되돌리면 정확히 원래대로 돌아와요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

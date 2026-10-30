@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 data class WeatherState(
@@ -128,7 +129,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, UserData())
 
     val myThresholds: StateFlow<FeelsThresholds> = userData
-        .map { FeelsLearner.estimate(it.surveys, System.currentTimeMillis()) }
+        .map { FeelsLearner.estimate(it.surveys, LocalDate.now()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, FeelsThresholds.DEFAULT)
 
     private val selectedSlotKey = MutableStateFlow<String?>(null)
@@ -311,7 +312,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             prefs.saveSurveys(records)
-            val after = FeelsLearner.estimate(records, now)
+            val after = FeelsLearner.estimate(records, LocalDate.now())
             _messages.send(describeChange(before, after) ?: "'${reported.surveyLabel}' 응답을 기록했어요.")
         }
     }
@@ -334,22 +335,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val records = userData.value.surveys.map {
             if (it.slotKey == slotKey && !it.isDeleted) it.copy(deletedAtMillis = now) else it
         }
-        return saveAndDescribe(records, now, "기록을 삭제했어요.")
+        return saveAndDescribe(records, "기록을 삭제했어요.")
     }
 
     /** 삭제한 기록을 원래 응답 시각 그대로 되살린다. 같은 시간대에 새 응답이 있으면 새 응답을 유지한다. */
     suspend fun restoreSurvey(slotKey: String): String {
-        val now = System.currentTimeMillis()
         val current = userData.value.surveys
         if (current.any { it.slotKey == slotKey && !it.isDeleted }) return "같은 시간대에 새 응답이 있어 되돌리지 않았어요."
         val records = current.map { if (it.slotKey == slotKey) it.copy(deletedAtMillis = null) else it }
-        return saveAndDescribe(records, now, "기록을 되돌렸어요.")
+        return saveAndDescribe(records, "기록을 되돌렸어요.")
     }
 
-    private suspend fun saveAndDescribe(records: List<SurveyRecord>, now: Long, done: String): String {
-        val before = FeelsLearner.estimate(userData.value.surveys, now)
+    private suspend fun saveAndDescribe(records: List<SurveyRecord>, done: String): String {
+        val today = LocalDate.now()
+        val before = FeelsLearner.estimate(userData.value.surveys, today)
         prefs.saveSurveys(records)
-        val after = FeelsLearner.estimate(records, now)
+        val after = FeelsLearner.estimate(records, today)
         return describeChange(before, after)?.let { "$done $it" } ?: done
     }
 
