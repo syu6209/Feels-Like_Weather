@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,6 +34,7 @@ import com.zozi.feels_likeweather.domain.ClothingRecommender
 import com.zozi.feels_likeweather.domain.FeelsThresholds
 import com.zozi.feels_likeweather.domain.TimeSlot
 import com.zozi.feels_likeweather.ui.components.WeatherIcon
+import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.theme.composeColor
 import java.time.format.TextStyle
 import java.util.Locale
@@ -45,8 +47,11 @@ fun HourlyForecastCard(forecast: WeatherForecast, modifier: Modifier = Modifier)
     val now = forecast.localNow().withMinute(0).withSecond(0).withNano(0)
     val hours = forecast.hourly.filter { !it.time.isBefore(now) }.take(25)
     WeatherCard(modifier = modifier, title = "시간별 예보", contentPadding = false) {
+        val listState = rememberLazyListState()
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            state = listState,
+            modifier = Modifier.horizontalFadingEdges(state = listState),
+            contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(hours, key = { it.time.toString() }) { h ->

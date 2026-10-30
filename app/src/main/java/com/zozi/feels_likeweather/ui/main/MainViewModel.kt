@@ -367,19 +367,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveProfile(profile: Profile) {
         viewModelScope.launch {
             val list = userData.value.profiles
-            val updated = if (list.any { it.id == profile.id }) {
-                list.map { if (it.id == profile.id) profile else it }
-            } else {
-                list + profile
-            }
+            val isNew = list.none { it.id == profile.id }
+            val updated = if (isNew) list + profile else list.map { if (it.id == profile.id) profile else it }
             prefs.saveProfiles(updated)
+            // 새로 만든 프로필은 바로 옷차림 추천에서 보이도록 선택한다.
+            if (isNew) prefs.saveSelectedProfile(profile.id)
         }
     }
 
     fun deleteProfile(id: String) {
         viewModelScope.launch {
             prefs.saveProfiles(userData.value.profiles.filterNot { it.id == id && !it.isMine })
+            if (userData.value.selectedProfileId == id) prefs.saveSelectedProfile(Profile.MINE_ID)
         }
+    }
+
+    /** 옷차림 추천에서 고른 프로필을 기억한다. */
+    fun selectProfile(id: String) {
+        viewModelScope.launch { prefs.saveSelectedProfile(id) }
     }
 
     fun setThemeMode(mode: ThemeMode) {

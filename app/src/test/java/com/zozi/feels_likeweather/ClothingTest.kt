@@ -6,7 +6,6 @@ import com.zozi.feels_likeweather.domain.AgeGroup
 import com.zozi.feels_likeweather.domain.ClothingItem
 import com.zozi.feels_likeweather.domain.ClothingRecommender
 import com.zozi.feels_likeweather.domain.FeelsBand
-import com.zozi.feels_likeweather.domain.FeelsThresholds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,7 +39,7 @@ class ClothingTest {
     @Test
     fun neededWeatherItemsComeFirst() {
         val window = ActivityWindow("오늘", listOf(hour(9, 15.0, pop = 80, code = 63), hour(10, 16.0, pop = 60)))
-        val rec = ClothingRecommender.recommend(AgeGroup.ADULT, FeelsBand.COOL, window, FeelsThresholds.DEFAULT)
+        val rec = ClothingRecommender.recommend(AgeGroup.ADULT, null, FeelsBand.COOL, window)
         assertEquals(ClothingItem.UMBRELLA, rec.conditionalItems.first().item)
         assertTrue(rec.conditionalItems.first().needed)
         val firstUnneeded = rec.conditionalItems.indexOfFirst { !it.needed }
@@ -50,7 +49,7 @@ class ClothingTest {
     @Test
     fun noRainMeansUmbrellaAtBottom() {
         val window = ActivityWindow("오늘", listOf(hour(12, 30.0, uv = 8.0)))
-        val rec = ClothingRecommender.recommend(AgeGroup.ADULT, FeelsBand.HOT, window, FeelsThresholds.DEFAULT)
+        val rec = ClothingRecommender.recommend(AgeGroup.ADULT, null, FeelsBand.HOT, window)
         val umbrella = rec.conditionalItems.first { it.item == ClothingItem.UMBRELLA }
         assertFalse(umbrella.needed)
         assertTrue(rec.conditionalItems.first().needed)
@@ -63,7 +62,7 @@ class ClothingTest {
             assertFalse(ClothingRecommender.itemsFor(AgeGroup.INFANT, band).contains(ClothingItem.SCARF))
         }
         val window = ActivityWindow("오늘", listOf(hour(12, 30.0, uv = 9.0)))
-        val rec = ClothingRecommender.recommend(AgeGroup.INFANT, FeelsBand.HOT, window, FeelsThresholds.DEFAULT)
+        val rec = ClothingRecommender.recommend(AgeGroup.INFANT, null, FeelsBand.HOT, window)
         assertTrue(rec.conditionalItems.none { it.item == ClothingItem.SUNGLASSES })
     }
 }

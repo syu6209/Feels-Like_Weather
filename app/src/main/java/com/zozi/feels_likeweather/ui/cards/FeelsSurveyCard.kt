@@ -45,6 +45,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.zozi.feels_likeweather.domain.FeelsBand
 import com.zozi.feels_likeweather.ui.components.ParticleLayer
+import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.components.rememberParticleBurstState
 import com.zozi.feels_likeweather.ui.main.FeelsUi
 import com.zozi.feels_likeweather.ui.theme.composeColor
@@ -113,6 +114,7 @@ fun FeelsSurveyCard(
                     }
                     LazyRow(
                         state = listState,
+                        modifier = Modifier.horizontalFadingEdges(state = listState),
                         contentPadding = PaddingValues(horizontal = PeekWidth + ButtonSpacing),
                         horizontalArrangement = Arrangement.spacedBy(ButtonSpacing),
                         flingBehavior = rememberSnapFlingBehavior(listState, SnapPosition.Center),
