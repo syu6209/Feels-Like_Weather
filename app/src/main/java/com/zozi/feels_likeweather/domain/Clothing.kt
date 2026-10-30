@@ -55,6 +55,23 @@ enum class ClothingItem(val key: String, val label: String, val conditional: Boo
     HAND_WARMER("hand_warmer", "핫팩", true),
 }
 
+/** 옷을 입는 층. 구간이 바뀌는 날 어떤 옷을 어느 구간 기준으로 고를지 정할 때 쓴다. */
+enum class ClothingLayer { INNER, TOP, OUTER, BOTTOM, SHOES, ACCESSORY, WEATHER }
+
+val ClothingItem.layer: ClothingLayer
+    get() = when (this) {
+        THERMAL -> ClothingLayer.INNER
+        SLEEVELESS, SHORT_SLEEVE, LINEN_SHIRT, LONG_SLEEVE, SWEATSHIRT, KNIT, ROMPER, LONG_ROMPER -> ClothingLayer.TOP
+        CARDIGAN, VEST, LIGHT_JACKET, TRENCH_COAT, COAT, LIGHT_PADDING, PADDING, LONG_PADDING, SNOWSUIT -> ClothingLayer.OUTER
+        SHORTS, COTTON_PANTS, JEANS, FLEECE_PANTS -> ClothingLayer.BOTTOM
+        SANDALS, SNEAKERS, WINTER_BOOTS -> ClothingLayer.SHOES
+        SCARF, NECK_WARMER, GLOVES, BEANIE -> ClothingLayer.ACCESSORY
+        else -> ClothingLayer.WEATHER
+    }
+
+/** 추천 옷 하나. [note] 는 "출발할 때 · 벗기 쉬운 겉옷" 처럼 타일 아래에 붙는 설명. */
+data class RecommendedItem(val item: ClothingItem, val note: String? = null)
+
 data class ConditionalItem(val item: ClothingItem, val needed: Boolean, val reason: String)
 
 /** 프로필의 활동 시간대 날씨 요약. */
@@ -107,12 +124,15 @@ data class ActivityWindow(
 }
 
 data class ClothingRecommendation(
+    /** 기본 옷차림 기준 구간 (구간이 바뀌는 날은 가장 오래 머무는 구간). */
     val band: FeelsBand,
-    val items: List<ClothingItem>,
+    val items: List<RecommendedItem>,
     /** 필요한 아이템이 먼저, 불필요한 아이템이 뒤에 오도록 정렬됨. */
     val conditionalItems: List<ConditionalItem>,
     val tips: List<String>,
     val window: ActivityWindow,
+    /** 활동 시간 체감 분석. 시간별 예보가 없으면 null. */
+    val plan: ActivityPlan? = null,
 )
 
 /**
@@ -171,38 +191,75 @@ object ClothingRecommender {
     fun itemsFor(ageGroup: AgeGroup, band: FeelsBand): List<ClothingItem> =
         table.getValue(ageGroup).getValue(band)
 
+    /**
+     * @param plan 활동 시간 체감 분석. 있으면 구간 변화에 맞춘 겹쳐 입기 추천을 하고,
+     *   없으면 [fallbackBand] 하나로 추천한다.
+     */
     fun recommend(
         ageGroup: AgeGroup,
-        band: FeelsBand,
+        plan: ActivityPlan?,
+        fallbackBand: FeelsBand,
         window: ActivityWindow,
-        thresholds: FeelsThresholds,
     ): ClothingRecommendation {
-        val conditional = conditionalItems(ageGroup, band, window, thresholds)
+        val core = plan?.coreBand ?: fallbackBand
+        val cold = plan?.coldBand ?: core
+        val warm = plan?.warmBand ?: core
+        val conditional = conditionalItems(ageGroup, cold, warm, window)
             .sortedByDescending { it.needed }
         return ClothingRecommendation(
-            band = band,
-            items = itemsFor(ageGroup, band),
+            band = core,
+            items = if (plan == null) itemsFor(ageGroup, core).map { RecommendedItem(it) } else outfit(ageGroup, plan),
             conditionalItems = conditional,
-            tips = tips(ageGroup, band, window, thresholds),
+            tips = plan?.advice.orEmpty() + tips(ageGroup, cold, warm, window),
             window = window,
+            plan = plan,
         )
     }
 
+    /**
+     * 활동 시간 동안의 옷차림 (규칙 기반).
+     *  - 이너·상의·하의·신발: 가장 오래 머무는 구간 기준 (중간에 바꿔 입기 어려움)
+     *  - 겉옷·소품: 가장 추운 구간 기준, 구간이 바뀌면 "벗기 쉬운 겉옷" 설명을 붙임
+     *  - 가장 더운 구간이 더 덥다면 그 구간의 가장 가벼운 상의를 "더울 땐 이것만" 으로 추가
+     */
+    fun outfit(ageGroup: AgeGroup, plan: ActivityPlan): List<RecommendedItem> {
+        val core = itemsFor(ageGroup, plan.coreBand)
+        if (plan.bandSpan == 0) return core.map { RecommendedItem(it) }
+
+        val cold = itemsFor(ageGroup, plan.coldBand)
+        val warm = itemsFor(ageGroup, plan.warmBand)
+        val changes = plan.coldBand != plan.coreBand
+        val result = LinkedHashMap<ClothingItem, RecommendedItem>()
+        fun add(item: ClothingItem, note: String? = null) {
+            if (item !in result) result[item] = RecommendedItem(item, note)
+        }
+
+        core.filter { it.layer in BASE_LAYERS }.forEach { add(it) }
+        (if (changes) cold else core).filter { it.layer == ClothingLayer.OUTER }
+            .forEach { add(it, if (changes) plan.outerNote else null) }
+        (cold + core).filter { it.layer == ClothingLayer.ACCESSORY }
+            .forEach { add(it, if (changes && it !in core) "추울 때 · 가방에" else null) }
+        if (plan.warmBand.ordinal > plan.coreBand.ordinal) {
+            warm.firstOrNull { it.layer == ClothingLayer.TOP && it !in result }?.let { add(it, "더울 땐 이것만") }
+        }
+        return result.values.toList()
+    }
+
+    private val BASE_LAYERS = setOf(ClothingLayer.INNER, ClothingLayer.TOP, ClothingLayer.BOTTOM, ClothingLayer.SHOES)
+
     private fun conditionalItems(
         ageGroup: AgeGroup,
-        band: FeelsBand,
+        coldBand: FeelsBand,
+        warmBand: FeelsBand,
         w: ActivityWindow,
-        thresholds: FeelsThresholds,
     ): List<ConditionalItem> {
         val rainy = w.maxPrecipitationProbability >= 40 || w.precipitationSum >= 0.5 || w.wet
         val rainReason = if (rainy) "강수확률 ${w.maxPrecipitationProbability}%" else "비 소식 없음"
         // WHO UV Index 는 정수로 반올림해 안내하므로, 판단과 표시 모두 반올림 값을 쓴다.
         val uv = w.maxUv.roundToInt().toDouble()
         val uvText = "자외선 ${uv.roundToInt()} (${uvLevel(uv)})"
-        val maxBand = w.maxApparent?.let(thresholds::bandOf) ?: band
-        val minBand = w.minApparent?.let(thresholds::bandOf) ?: band
-        val hot = maxOf(maxBand.ordinal, band.ordinal) >= FeelsBand.HOT.ordinal
-        val cold = minOf(minBand.ordinal, band.ordinal) <= FeelsBand.COLD.ordinal
+        val hot = warmBand.ordinal >= FeelsBand.HOT.ordinal
+        val cold = coldBand.ordinal <= FeelsBand.COLD.ordinal
         val kid = ageGroup == AgeGroup.INFANT || ageGroup == AgeGroup.CHILD
 
         return buildList {
@@ -233,30 +290,23 @@ object ClothingRecommender {
         }
     }
 
-    private fun tips(ageGroup: AgeGroup, band: FeelsBand, w: ActivityWindow, thresholds: FeelsThresholds): List<String> {
-        val coldSide = band.ordinal <= FeelsBand.CHILLY.ordinal
-        val hotSide = band.ordinal >= FeelsBand.HOT.ordinal
+    private fun tips(ageGroup: AgeGroup, coldBand: FeelsBand, warmBand: FeelsBand, w: ActivityWindow): List<String> {
+        val coldSide = coldBand.ordinal <= FeelsBand.CHILLY.ordinal
+        val hotSide = warmBand.ordinal >= FeelsBand.HOT.ordinal
         val tips = mutableListOf<String>()
         when (ageGroup) {
             AgeGroup.INFANT -> {
                 if (coldSide) tips += "아이는 같은 환경의 어른보다 한 겹 더 입혀주세요. 목 뒤에 땀이 나면 한 겹 벗겨 과열을 막아주세요."
-                if (band.ordinal <= FeelsBand.COLD.ordinal) tips += "목도리는 끈이 걸릴 수 있어 넥워머를 권장해요."
+                if (coldBand.ordinal <= FeelsBand.COLD.ordinal) tips += "목도리는 끈이 걸릴 수 있어 넥워머를 권장해요."
                 if (hotSide) tips += "6개월 미만 영아는 선크림보다 그늘·모자·얇은 긴소매로 햇빛을 가려주세요."
                 if (!coldSide && !hotSide) tips += "얇은 옷을 겹쳐 입혀 체온에 맞게 조절해주세요."
             }
             AgeGroup.CHILD -> tips += "활동량이 많아 땀이 나기 쉬워요. 벗고 입기 쉬운 겉옷으로 겹쳐 입혀주세요."
             AgeGroup.ADULT -> Unit
             AgeGroup.SENIOR -> {
-                if (coldSide || band == FeelsBand.COOL) tips += "체온 조절 능력이 떨어질 수 있어요. 얇은 옷을 여러 겹 입고 모자로 머리를 따뜻하게 해주세요."
+                if (coldSide || coldBand == FeelsBand.COOL) tips += "체온 조절 능력이 떨어질 수 있어요. 얇은 옷을 여러 겹 입고 모자로 머리를 따뜻하게 해주세요."
                 if (hotSide) tips += "더위를 늦게 느낄 수 있어요. 밝은 색의 통풍 잘 되는 옷을 입고 물을 자주 드세요."
             }
-        }
-        val min = w.minApparent
-        val max = w.maxApparent
-        if (min != null && max != null && max - min >= 8) {
-            tips += "활동 시간 동안 체감 ${min.roundToInt()}°~${max.roundToInt()}°로 차이가 커요. 벗기 쉬운 겉옷을 챙기세요."
-        } else if (min != null && thresholds.bandOf(min).ordinal < band.ordinal) {
-            tips += "활동 시간 중 가장 추울 때는 체감 ${min.roundToInt()}°예요. 겉옷을 하나 더 챙기세요."
         }
         if (w.maxWind >= 9) tips += "바람이 강해요(최대 ${w.maxWind.roundToInt()}m/s). 바람막이가 도움이 돼요."
         return tips
