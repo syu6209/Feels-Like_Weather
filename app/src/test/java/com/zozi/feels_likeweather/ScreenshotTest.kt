@@ -33,6 +33,8 @@ import com.zozi.feels_likeweather.ui.components.BandGraph
 import com.zozi.feels_likeweather.ui.components.skyBrush
 import com.zozi.feels_likeweather.ui.main.CurrentWeatherHeader
 import com.zozi.feels_likeweather.ui.main.FeelsUi
+import com.zozi.feels_likeweather.ui.main.SurveyReaction
+import com.zozi.feels_likeweather.ui.settings.SurveyHistoryContent
 import com.zozi.feels_likeweather.ui.main.buildSlots
 import com.zozi.feels_likeweather.ui.profile.ActivityRangeSelector
 import com.zozi.feels_likeweather.ui.theme.FeelsLikeWeatherTheme
@@ -64,18 +66,31 @@ class ScreenshotTest {
         fetchedAtMillis = 0L,
     )
 
-    private fun feels(mine: FeelsThresholds = FeelsThresholds.DEFAULT, selectIndexFromCurrent: Int = 0): FeelsUi {
+    private fun feels(
+        mine: FeelsThresholds = FeelsThresholds.DEFAULT,
+        selectIndexFromCurrent: Int = 0,
+        answerCurrent: FeelsBand? = null,
+        reacting: Boolean = false,
+    ): FeelsUi {
         val now = forecast.current.time
-        val slots = buildSlots(forecast, now, mine)
-        val current = slots.indexOfFirst { it.slot.isCurrent }
+        val plain = buildSlots(forecast, now, mine)
+        val current = plain.indexOfFirst { it.slot.isCurrent }
+        val records = listOfNotNull(
+            SurveyRecord(plain[current - 1].slot.key, plain[current - 1].apparent, FeelsBand.WARM, 1, plain[current - 1].myBand),
+            answerCurrent?.let { SurveyRecord(plain[current].slot.key, plain[current].apparent, it, 2, plain[current].myBand) },
+        )
+        val slots = buildSlots(forecast, now, mine, records)
         val selected = slots[(current + selectIndexFromCurrent).coerceIn(slots.indices)]
         return FeelsUi(
             now = now,
             slots = slots,
             selected = selected,
-            briefing = Briefings.pick(selected.myBand, null, 0L, Random(3)).first,
+            briefing = Briefings.pick(selected.displayBand, null, 0L, Random(3)).first,
             myThresholds = mine,
-            answers = mapOf(slots[current - 1].slot.key to FeelsBand.WARM),
+            answers = records.associate { it.slotKey to it.reported },
+            reaction = if (reacting && answerCurrent != null) {
+                SurveyReaction(selected.slot.key, selected.myBand, answerCurrent, Briefings.reaction(answerCurrent, true))
+            } else null,
         )
     }
 
@@ -151,13 +166,55 @@ class ScreenshotTest {
     }
 
     @Test
+    fun feelsForecastCorrected() = shot("07_feels_corrected") {
+        Page {
+            // 반응 문구가 보이는 2초 동안
+            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD, reacting = true), surveyCount = 2, onSelectSlot = {})
+            // 반응 이후: 새 구간 브리핑 + "선선함 → 추움" 태그
+            FeelsForecastCard(feels(answerCurrent = FeelsBand.COLD), surveyCount = 2, onSelectSlot = {})
+            FeelsSurveyCard(feels(answerCurrent = FeelsBand.COLD), onAnswer = {})
+        }
+    }
+
+    @Test
+    fun surveyHistory() = shot("08_survey_history") {
+        val day = 24L * 60 * 60 * 1000
+        val now = 100 * day
+        val records = listOf(
+            SurveyRecord("2026-10-30T15:00", 15.4, FeelsBand.COLD, now - 1000, FeelsBand.COOL),
+            SurveyRecord("2026-10-30T12:00", 16.2, FeelsBand.WARM, now - 3 * 3600_000, FeelsBand.COOL),
+            SurveyRecord("2026-10-29T21:00", 11.0, FeelsBand.CHILLY, now - day, FeelsBand.CHILLY),
+            SurveyRecord("2026-10-29T08:00", 7.5, FeelsBand.COLD, now - 2 * day, FeelsBand.CHILLY, deletedAtMillis = now - 2 * day),
+        )
+        androidx.compose.material3.Surface {
+            SurveyHistoryContent(
+                records = records,
+                thresholds = FeelsLearner.estimate(records, now),
+                nowMillis = now,
+                onDelete = {},
+                onRestore = {},
+            )
+        }
+    }
+
+    @Test
+    fun clothingCardTomorrow() = shot("09_clothing_tomorrow") {
+        Page {
+            // 활동이 끝난 저녁 시간대 프로필 → 기본 선택이 '내일'
+            val evening = Profile("p", "회사원", com.zozi.feels_likeweather.domain.AgeGroup.ADULT, 9, 15)
+            ClothingCard(feels(), forecast, listOf(Profile.defaults.first(), evening), "p", {}, {}, {})
+        }
+    }
+
+    @Test
     fun graphs() = shot("06_graphs") {
-        val mine = FeelsLearner.replay(
+        val mine = FeelsLearner.estimate(
             listOf(
                 SurveyRecord("a", 18.0, FeelsBand.WARM, 1),
                 SurveyRecord("b", 18.5, FeelsBand.WARM, 2),
                 SurveyRecord("c", 5.0, FeelsBand.COLD, 3),
-            )
+            ),
+            nowMillis = 3,
         )
         androidx.compose.material3.Surface {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {

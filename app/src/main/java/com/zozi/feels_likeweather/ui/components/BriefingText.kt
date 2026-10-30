@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
@@ -84,8 +83,6 @@ fun BriefingText(
                 brush = brush,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = baseSize * scale.value,
-                // 보조색(흰색)이 밝은 배경 위에서도 읽히도록 대표색 그림자를 살짝 깐다.
-                shadow = Shadow(color = color.copy(alpha = 0.45f), offset = Offset(0f, 1f), blurRadius = 3f),
             )
         ) { append(phrase.keyword) }
         append(phrase.suffix)

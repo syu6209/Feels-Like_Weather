@@ -20,12 +20,14 @@ data class TimeSlot(
     val isCurrent: Boolean,
     val currentTime: LocalDateTime? = null,
 ) {
-    /** 박스에 표시하는 문구. 예) "아침(8시)", "현재(3:20)", "현재·점심(12시)" */
+    /**
+     * 박스에 표시하는 문구. 예) "아침(8시)", 현재 박스는 "3:20" 또는 겹치는 시간대 이름 "점심(12시)".
+     * 현재 박스는 박스 위쪽에 "지금" 이 따로 표시되므로 여기서는 "현재" 를 붙이지 않는다.
+     */
     val title: String
         get() = when {
-            isCurrent && periodName != null -> "현재·$periodName(${clockHour}시)"
-            isCurrent -> "현재(${currentTime?.let { "%d:%02d".format(twelve(it.hour), it.minute) }})"
-            else -> "$periodName(${clockHour}시)"
+            periodName != null -> "$periodName(${clockHour}시)"
+            else -> currentTime?.let { "%d:%02d".format(twelve(it.hour), it.minute) } ?: "${clockHour}시"
         }
 
     /** 설문 질문에 쓰는 문구. 예) "오늘 아침 실외", "지금 실외" */

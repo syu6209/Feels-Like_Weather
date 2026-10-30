@@ -5,9 +5,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.Dp
+import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.TimeSlots
+import java.time.LocalDate
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,7 +73,6 @@ import com.zozi.feels_likeweather.ui.theme.onColor
 import kotlin.math.roundToInt
 
 /** 세 번째 카드: 옷차림 추천. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ClothingCard(
     feels: FeelsUi,
@@ -79,11 +86,18 @@ fun ClothingCard(
 ) {
     val profile = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.first()
     val thresholds = if (profile.isMine) feels.myThresholds else FeelsThresholds.DEFAULT
-    val apparent = feels.selected.apparent
-    val band = thresholds.bandOf(apparent)
-    val recommendation = remember(profile, band, forecast, feels.now.hour) {
-        val window = ActivityWindow.of(forecast, profile, feels.now)
-        ClothingRecommender.recommend(profile.ageGroup, band, window, thresholds)
+
+    // 날짜: 사용자가 고르지 않았다면 오늘 밤(활동 종료 후)은 내일, 그 전에는 오늘
+    var dayOverride by rememberSaveable(profile.id) { mutableStateOf<Int?>(null) }
+    val dayOffset = dayOverride ?: ActivityWindow.defaultDayOffset(profile, feels.now)
+    val date = feels.now.toLocalDate().plusDays(dayOffset.toLong())
+
+    val window = remember(profile, dayOffset, forecast, feels.now.hour) {
+        ActivityWindow.forDay(forecast, profile, feels.now, dayOffset)
+    }
+    val basis = clothingBasis(feels, window, date, profile, thresholds)
+    val recommendation = remember(profile, basis.band, window, thresholds) {
+        ClothingRecommender.recommend(profile.ageGroup, basis.band, window, thresholds)
     }
 
     WeatherCard(modifier = modifier, title = "옷차림 추천", contentPadding = false) {
@@ -109,14 +123,20 @@ fun ClothingCard(
             }
         }
 
+        DaySelector(
+            today = feels.now.toLocalDate(),
+            selected = dayOffset,
+            onSelect = { dayOverride = it },
+        )
+
         Column(Modifier.padding(horizontal = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(50), color = band.composeColor) {
+                        Surface(shape = RoundedCornerShape(50), color = basis.band.composeColor) {
                             Text(
-                                band.label,
-                                color = band.onColor,
+                                basis.band.label,
+                                color = basis.band.onColor,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
@@ -124,13 +144,13 @@ fun ClothingCard(
                         }
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "체감 ${apparent.roundToInt()}° · ${if (profile.isMine) "내 체감" else "기본 체감"} 기준",
+                            "체감 ${basis.apparent.roundToInt()}° · ${if (profile.isMine) "내 체감" else "기본 체감"} 기준",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                         )
                     }
                     Text(
-                        "${profile.ageGroup.label}(${profile.ageGroup.description}) · 활동 ${recommendation.window.label}",
+                        "${basis.label} · 활동 ${window.label} · ${profile.ageGroup.label}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -141,23 +161,49 @@ fun ClothingCard(
                     Text("편집")
                 }
             }
-            Spacer(Modifier.height(10.dp))
+        }
+        Spacer(Modifier.height(10.dp))
 
-            // 필요한 날씨 아이템 → 옷 → 불필요한 날씨 아이템 순서
-            val needed = recommendation.conditionalItems.filter { it.needed }
-            val unneeded = recommendation.conditionalItems.filterNot { it.needed }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                needed.forEach { ClothingTile(it.item, profile.ageGroup, caption = it.reason, emphasized = true) }
-                recommendation.items.forEach { ClothingTile(it, profile.ageGroup) }
-                unneeded.forEach { ClothingTile(it.item, profile.ageGroup, caption = it.reason, dimmed = true) }
+        // 필요한 날씨 아이템 + 옷 = 유효 아이템. 9개 이하면 3열로 크게, 많으면 4열로 카드 폭을 꽉 채운다.
+        val needed = recommendation.conditionalItems.filter { it.needed }
+        val unneeded = recommendation.conditionalItems.filterNot { it.needed }
+        val valid = needed.map { TileData(it.item, it.reason, emphasized = true) } +
+            recommendation.items.map { TileData(it) }
+        BoxWithConstraints(Modifier.padding(horizontal = 20.dp)) {
+            val columns = if (valid.size <= 9) 3 else 4
+            val tileWidth = (maxWidth - TileSpacing * (columns - 1)) / columns
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                valid.chunked(columns).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(TileSpacing)) {
+                        row.forEach { ClothingTile(it, profile.ageGroup, tileWidth) }
+                    }
+                }
             }
+        }
 
-            if (recommendation.tips.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
+        // 지금은 필요 없는 날씨 아이템은 아래에 작게, 가로로 스크롤해서 본다.
+        if (unneeded.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "필요 없는 아이템",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(TileSpacing),
+            ) {
+                items(unneeded, key = { it.item.key }) {
+                    ClothingTile(TileData(it.item, it.reason, dimmed = true), profile.ageGroup, 72.dp)
+                }
+            }
+        }
+
+        if (recommendation.tips.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.padding(horizontal = 20.dp)) {
                 recommendation.tips.forEach { tip ->
                     Row(Modifier.padding(vertical = 2.dp)) {
                         Text("•  ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -169,42 +215,94 @@ fun ClothingCard(
     }
 }
 
+private val TileSpacing = 10.dp
+
+/** 옷차림 추천의 기준 체감. */
+private data class ClothingBasis(val apparent: Double, val band: FeelsBand, val label: String)
+
+/**
+ * 고른 날짜에 체감 보정 예보 카드에서 선택한 시간대가 있으면 그 시간대(설문 응답 반영)를,
+ * 없으면 그날 활동 시간대의 평균 체감을 기준으로 삼는다.
+ */
+private fun clothingBasis(
+    feels: FeelsUi,
+    window: ActivityWindow,
+    date: LocalDate,
+    profile: Profile,
+    thresholds: FeelsThresholds,
+): ClothingBasis {
+    val slot = feels.selected
+    if (slot.slot.hour.toLocalDate() == date) {
+        val band = if (profile.isMine) slot.displayBand else thresholds.bandOf(slot.apparent)
+        val label = if (slot.slot.isCurrent) "지금 체감" else "${slot.slot.dayLabel} ${slot.slot.title} 체감"
+        return ClothingBasis(slot.apparent, band, label)
+    }
+    val mean = window.meanApparent ?: slot.apparent
+    return ClothingBasis(mean, thresholds.bandOf(mean), "활동 시간 평균 체감")
+}
+
 @Composable
-private fun ClothingTile(
-    item: ClothingItem,
-    ageGroup: AgeGroup,
-    caption: String? = null,
-    emphasized: Boolean = false,
-    dimmed: Boolean = false,
-) {
+private fun DaySelector(today: LocalDate, selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        (0..2).forEach { offset ->
+            val d = today.plusDays(offset.toLong())
+            FilterChip(
+                selected = offset == selected,
+                onClick = { onSelect(offset) },
+                label = {
+                    Text(
+                        "${TimeSlots.dayLabel(offset.toLong())} ${d.monthValue}/${d.dayOfMonth}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                leadingIcon = if (offset == selected) {
+                    { Icon(Icons.Filled.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
+                } else null,
+            )
+        }
+    }
+}
+
+private data class TileData(
+    val item: ClothingItem,
+    val caption: String? = null,
+    val emphasized: Boolean = false,
+    val dimmed: Boolean = false,
+)
+
+@Composable
+private fun ClothingTile(tile: TileData, ageGroup: AgeGroup, width: Dp) {
     val scheme = MaterialTheme.colorScheme
     Column(
         Modifier
-            .width(76.dp)
-            .alpha(if (dimmed) 0.4f else 1f),
+            .width(width)
+            .alpha(if (tile.dimmed) 0.4f else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = if (emphasized) scheme.primaryContainer else scheme.surfaceContainerHigh,
-            border = if (emphasized) BorderStroke(1.5.dp, scheme.primary) else null,
-            modifier = Modifier.size(68.dp),
+            shape = RoundedCornerShape(if (width > 90.dp) 22.dp else 18.dp),
+            color = if (tile.emphasized) scheme.primaryContainer else scheme.surfaceContainerHigh,
+            border = if (tile.emphasized) BorderStroke(1.5.dp, scheme.primary) else null,
+            modifier = Modifier.size(width),
         ) {
-            Box(contentAlignment = Alignment.Center) { ClothingImage(item, ageGroup) }
+            Box(contentAlignment = Alignment.Center) { ClothingImage(tile.item, ageGroup, width * 0.78f) }
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            item.label,
+            tile.item.label,
             style = MaterialTheme.typography.labelMedium,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (caption != null) {
+        if (tile.caption != null) {
             Text(
-                caption,
+                tile.caption,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (emphasized) scheme.primary else scheme.onSurfaceVariant,
+                color = if (tile.emphasized) scheme.primary else scheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -219,7 +317,7 @@ private fun ClothingTile(
  */
 @SuppressLint("DiscouragedApi", "LocalContextGetResourceValueCall")
 @Composable
-private fun ClothingImage(item: ClothingItem, ageGroup: AgeGroup) {
+private fun ClothingImage(item: ClothingItem, ageGroup: AgeGroup, size: Dp) {
     val context = LocalContext.current
     val resId = remember(item, ageGroup) {
         val res = context.resources
@@ -232,14 +330,14 @@ private fun ClothingImage(item: ClothingItem, ageGroup: AgeGroup) {
             painter = painterResource(resId),
             contentDescription = item.label,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(size),
         )
     } else {
         Icon(
             fallbackIcon(item),
             contentDescription = item.label,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(size * 0.5f),
         )
     }
 }

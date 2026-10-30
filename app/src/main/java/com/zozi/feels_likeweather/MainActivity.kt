@@ -19,6 +19,7 @@ import com.zozi.feels_likeweather.ui.main.MainViewModel
 import com.zozi.feels_likeweather.ui.profile.ProfileEditScreen
 import com.zozi.feels_likeweather.ui.region.RegionScreen
 import com.zozi.feels_likeweather.ui.settings.SettingsScreen
+import com.zozi.feels_likeweather.ui.settings.SurveyHistoryScreen
 import com.zozi.feels_likeweather.ui.theme.FeelsLikeWeatherTheme
 
 class MainActivity : ComponentActivity() {
@@ -54,7 +55,11 @@ class MainActivity : ComponentActivity() {
                             onBack = { nav.popBackStack() },
                             onEditProfile = editProfile,
                             onAddProfile = addProfile,
+                            onOpenSurveyHistory = { nav.navigate("surveys") },
                         )
+                    }
+                    composable("surveys") {
+                        SurveyHistoryScreen(vm = vm, onBack = { nav.popBackStack() })
                     }
                     composable(
                         "profile/{id}",

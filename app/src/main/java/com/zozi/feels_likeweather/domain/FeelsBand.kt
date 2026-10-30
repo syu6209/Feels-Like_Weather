@@ -6,21 +6,21 @@ package com.zozi.feels_likeweather.domain
  * 기본 분기점(°C, 체감온도 기준)과 근거는 [FeelsThresholds.DEFAULT] 와 docs/FEELS_BANDS.md 참고.
  *
  * @param color 구간 대표 색상 (ARGB)
- * @param highlight 브러쉬 그라데이션에 함께 흐르는 보조 색상 (ARGB)
+ * @param adverb "생각보다 더 '춥게' 느끼셨군요!" 처럼 반응 문구에 쓰는 부사형
  */
 enum class FeelsBand(
     val label: String,
     val surveyLabel: String,
     val color: Long,
-    val highlight: Long,
+    val adverb: String,
 ) {
-    FREEZING("강추위", "매우 추웠음", 0xFF3D5AFE, 0xFFFFFFFF),
-    COLD("추움", "추웠음", 0xFF2E86DE, 0xFFFFFFFF),
-    CHILLY("쌀쌀함", "쌀쌀했음", 0xFF4FC3F7, 0xFFFFFFFF),
-    COOL("선선함", "선선했음", 0xFF26BFA6, 0xFFFFFFFF),
-    WARM("따뜻함", "따뜻했음", 0xFFFFB300, 0xFFFFFFFF),
-    HOT("더움", "더웠음", 0xFFFF7043, 0xFFFFFFFF),
-    SWELTERING("무더움", "무더웠음", 0xFFE53935, 0xFFFFFFFF);
+    FREEZING("강추위", "매우 추웠음", 0xFF3D5AFE, "꽁꽁 얼 듯 춥게"),
+    COLD("추움", "추웠음", 0xFF2E86DE, "춥게"),
+    CHILLY("쌀쌀함", "쌀쌀했음", 0xFF4FC3F7, "쌀쌀하게"),
+    COOL("선선함", "선선했음", 0xFF26BFA6, "선선하게"),
+    WARM("따뜻함", "따뜻했음", 0xFFFFB300, "따뜻하게"),
+    HOT("더움", "더웠음", 0xFFFF7043, "덥게"),
+    SWELTERING("무더움", "무더웠음", 0xFFE53935, "푹푹 찌듯 덥게");
 
     /** 현재 시제 질문용. 예) 지금은 "쌀쌀해요" */
     val presentLabel: String

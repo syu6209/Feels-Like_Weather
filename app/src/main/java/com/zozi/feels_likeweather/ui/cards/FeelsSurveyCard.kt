@@ -48,7 +48,7 @@ import com.zozi.feels_likeweather.ui.components.ParticleLayer
 import com.zozi.feels_likeweather.ui.components.rememberParticleBurstState
 import com.zozi.feels_likeweather.ui.main.FeelsUi
 import com.zozi.feels_likeweather.ui.theme.composeColor
-import com.zozi.feels_likeweather.ui.theme.highlightColor
+import com.zozi.feels_likeweather.ui.theme.brushHighlight
 import com.zozi.feels_likeweather.ui.theme.onColor
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -67,6 +67,8 @@ fun FeelsSurveyCard(
     val slot = selected.slot
     val future = slot.isFuture(feels.now)
     val answer = feels.answers[slot.key]
+    // 응답 뒤에는 학습으로 기준이 바뀌므로, 응답 당시의 예보 구간을 "예보" 로 보여준다.
+    val forecastBand = selected.predictedAtAnswer ?: selected.myBand
     val primary = MaterialTheme.colorScheme.primary
 
     val particles = rememberParticleBurstState()
@@ -93,7 +95,7 @@ fun FeelsSurveyCard(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "체감 ${selected.apparent.roundToInt()}° · 예보 구간 '${selected.myBand.label}'" +
+                    text = "체감 ${selected.apparent.roundToInt()}° · 예보 구간 '${forecastBand.label}'" +
                         (answer?.let { " · 내 응답 '${it.surveyLabel}'" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -119,7 +121,7 @@ fun FeelsSurveyCard(
                             SurveyButton(
                                 band = band,
                                 width = buttonWidth,
-                                predicted = band == selected.myBand,
+                                predicted = band == forecastBand,
                                 chosen = band == answer,
                                 enabled = !future,
                                 onClick = { center ->
@@ -127,7 +129,7 @@ fun FeelsSurveyCard(
                                     if (origin != null) {
                                         particles.burst(
                                             origin,
-                                            listOf(band.composeColor, band.highlightColor, primary, band.composeColor),
+                                            listOf(band.composeColor, band.brushHighlight(cardIsLight = true), primary, band.composeColor),
                                         )
                                     }
                                     onAnswer(band)
@@ -199,13 +201,17 @@ private fun SurveyButton(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
             )
-            if (predicted || chosen) {
-                Text(
-                    text = if (chosen) "내 응답" else "예보",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (chosen) band.onColor.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            // 보조 문구가 없는 버튼도 같은 줄을 비워 두어 모든 버튼 높이를 가장 높은 버튼에 맞춘다.
+            Text(
+                text = when {
+                    chosen -> "내 응답"
+                    predicted -> "예보"
+                    else -> " "
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (chosen) band.onColor.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }
