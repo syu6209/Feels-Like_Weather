@@ -14,6 +14,12 @@ Open-Meteo 날씨에 체감 설문 데이터를 쌓아 "내 체감 구간"을 �
   3. **옷차림 추천**: 프로필 칩(마지막 선택 기억), 오늘·내일·모레, 활동 시간 최저·평균·최고 체감과 구간 흐름, 구간이 바뀌는 날의 겹쳐 입기 안내(규칙 기반), 연령대·구간별 옷 이미지, 날씨 아이템은 필요할 때만 상단, ⓘ 추천 근거
   4. 시간별 예보 · 주간 예보 · 상세 날씨
 - **프로필 편집**: 이름, 연령대 칩, 시간별 막대 그래프 위 핸들 드래그로 활동 시간 설정, 휴지통/저장
+- **홈 화면 위젯** (Jetpack Glance)
+  - **체감 보정 예보 위젯**: 체감온도·구간, 브리핑, 다음 시간대, 위젯에서 바로 답하는 체감 설문(설정에서 켜기/끄기)
+  - **옷차림 추천 위젯**: 위젯마다 보여줄 프로필 선택, 활동 시간 체감 구간, 챙길 것, 옷 이미지
+  - 크기 2×1 · 2×2 · 2×3 · 4×1 · 4×2 · 4×3 · 5×4 이상까지 크기별 배치(반응형), 크기를 늘릴수록 더 많은 정보
+  - **위젯 설정**: 홈 화면에서 위젯을 길게 누른 뒤 `설정`(안드로이드 12+, 삼성 One UI 포함). 배경 투명도 0~100%, 글자색(자동/흰색/검정), 설문 표시, 프로필
+  - 앱이 받은 예보를 캐시해 위젯이 그 데이터로 그리고, 30분마다 마지막 위치로 예보를 새로 받음(백그라운드 위치 권한 불필요)
 - **설정**: 테마, 내 체감 그래프, 내 체감 설문 기록(삭제 · 7일 내 되돌리기), 체감 구간 초기화, 프로필 관리, 데이터 출처
 
 ## 문서
@@ -29,6 +35,7 @@ app/src/main/java/com/zozi/feels_likeweather/
 │   ├── model/      날씨 모델, WMO 날씨 코드
 │   ├── remote/     OpenMeteoClient (HttpURLConnection + org.json)
 │   ├── location/   LocationClient(Fused), PlaceNameResolver(Geocoder)
+│   ├── cache/      ForecastCache (위젯용 마지막 예보)
 │   └── prefs/      AppPreferences (DataStore: 프로필, 설문, 브리핑 고정, 지역, 테마)
 ├── domain/         FeelsBand/Thresholds, FeelsLearner, Briefings, TimeSlots, Profile, Clothing
 └── ui/
@@ -38,6 +45,7 @@ app/src/main/java/com/zozi/feels_likeweather/
     ├── profile/    프로필 편집, 활동 시간 선택 그래프
     ├── region/     지역 선택
     └── settings/   설정
+widget/             Glance 위젯(체감 보정 예보 · 옷차림 추천), 위젯 설정 화면, 30분 갱신 Worker
 ```
 
 ## 빌드 · 테스트
@@ -50,7 +58,7 @@ app/src/main/java/com/zozi/feels_likeweather/
 ./gradlew testDebugUnitTest
 ```
 
-단위 테스트(도메인 로직)와 함께 Robolectric 스크린샷 테스트가 실행되어 `app/build/screenshots/*.png` 로 카드 렌더링 결과가 저장됩니다.
+단위 테스트(도메인 로직)와 함께 Robolectric 스크린샷 테스트가 실행되어 `app/build/screenshots/*.png` 로 카드 · 위젯(크기별 · 설정별) 렌더링 결과가 저장됩니다.
 
 ## 데이터 출처
 
