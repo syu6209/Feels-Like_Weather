@@ -1,5 +1,18 @@
 package com.zozi.feels_likeweather.ui.cards
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextDecoration
+import com.zozi.feels_likeweather.domain.FeelsBand
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
@@ -46,7 +59,7 @@ import com.zozi.feels_likeweather.ui.components.WeatherIcon
 import com.zozi.feels_likeweather.ui.main.FeelsUi
 import com.zozi.feels_likeweather.ui.main.SlotUi
 import com.zozi.feels_likeweather.ui.theme.composeColor
-import com.zozi.feels_likeweather.ui.theme.highlightColor
+import com.zozi.feels_likeweather.ui.theme.brushHighlight
 import com.zozi.feels_likeweather.ui.theme.onColor
 import kotlin.math.roundToInt
 
@@ -60,7 +73,9 @@ fun FeelsForecastCard(
 ) {
     var showInfo by rememberSaveable { mutableStateOf(false) }
     val selected = feels.selected
-    val band = selected.myBand
+    val band = selected.displayBand
+    val reaction = feels.reaction
+    val cardIsLight = MaterialTheme.colorScheme.surfaceContainerLowest.luminance() > 0.5f
 
     WeatherCard(
         modifier = modifier,
@@ -87,15 +102,7 @@ fun FeelsForecastCard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Surface(shape = CircleShape, color = band.composeColor) {
-                        Text(
-                            band.label,
-                            color = band.onColor,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
-                    }
+                    BandTagWithCorrection(from = reaction?.from ?: selected.correctedFrom, to = band)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "실제 ${selected.temperature.roundToInt()}° · " +
@@ -103,7 +110,7 @@ fun FeelsForecastCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (surveyCount > 0 && band != selected.defaultBand) {
+                    if (selected.answer == null && surveyCount > 0 && band != selected.defaultBand) {
                         Text(
                             text = "기본 기준이라면 '${selected.defaultBand.label}'",
                             style = MaterialTheme.typography.bodySmall,
@@ -113,12 +120,15 @@ fun FeelsForecastCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // 설문 응답이 예보와 다르면 2초간 반응 문구("생각보다 더 '춥게' 느끼셨군요!")를 보여준 뒤
+            // 새 구간의 브리핑으로 넘어간다. 문구가 바뀔 때마다 확대 애니메이션이 다시 재생된다.
+            val phrase = reaction?.phrase ?: feels.briefing
             BriefingText(
-                phrase = feels.briefing,
+                phrase = phrase,
                 color = band.composeColor,
-                highlight = band.highlightColor,
+                highlight = band.brushHighlight(cardIsLight),
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 26.sp),
-                playKey = band to feels.briefing,
+                playKey = Triple(selected.slot.key, band, phrase),
             )
         }
         Spacer(Modifier.height(14.dp))
@@ -206,7 +216,7 @@ private fun TimeSlotBox(slot: SlotUi, selected: Boolean, answered: Boolean, onCl
                     Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(slot.myBand.composeColor)
+                        .background(slot.displayBand.composeColor)
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
@@ -217,10 +227,59 @@ private fun TimeSlotBox(slot: SlotUi, selected: Boolean, answered: Boolean, onCl
                 )
             }
             Text(
-                text = if (answered) "응답함 ✓" else slot.myBand.label,
+                text = if (answered) "${slot.displayBand.label} ✓" else slot.myBand.label,
                 style = MaterialTheme.typography.labelSmall,
                 color = content.copy(alpha = 0.7f),
             )
+        }
+    }
+}
+
+/**
+ * 구간 태그. 설문으로 구간이 바뀐 시간대는 원래 예보 구간을 흐리게 지운 뒤 "쌀쌀함 → 추움" 처럼 보여준다.
+ * 새 구간 태그는 바뀔 때 아래에서 위로 밀려 올라오며 전환된다.
+ */
+@Composable
+private fun BandTagWithCorrection(from: FeelsBand?, to: FeelsBand) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AnimatedVisibility(visible = from != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
+            val shown = from ?: to
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = shown.composeColor.copy(alpha = 0.35f)) {
+                    Text(
+                        shown.label,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelLarge,
+                        textDecoration = TextDecoration.LineThrough,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "에서",
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        AnimatedContent(
+            targetState = to,
+            transitionSpec = {
+                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+            },
+            label = "bandTag",
+        ) { band ->
+            Surface(shape = CircleShape, color = band.composeColor) {
+                Text(
+                    band.label,
+                    color = band.onColor,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
         }
     }
 }

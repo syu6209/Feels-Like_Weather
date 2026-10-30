@@ -1,6 +1,7 @@
 package com.zozi.feels_likeweather.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import com.zozi.feels_likeweather.domain.FeelsBand
 
 val Purple80 = Color(0xFFD0BCFF)
@@ -14,8 +15,13 @@ val Pink40 = Color(0xFF7D5260)
 /** 구간 대표 색상. */
 val FeelsBand.composeColor: Color get() = Color(color)
 
-/** 브러쉬 그라데이션에 함께 흐르는 보조 색상. */
-val FeelsBand.highlightColor: Color get() = Color(highlight)
+/**
+ * 브러쉬 그라데이션에 대표색과 함께 흐르는 보조 색상.
+ * 카드 배경(흰색/검은색)과 섞이면 글자가 사라져 보이므로, 밝은 카드에서는 대표색의 짙은 색,
+ * 어두운 카드에서는 대표색의 밝은 색을 써서 흐르는 동안에도 항상 배경과 구분되게 한다.
+ */
+fun FeelsBand.brushHighlight(cardIsLight: Boolean): Color =
+    if (cardIsLight) lerp(composeColor, Color.Black, 0.38f) else lerp(composeColor, Color.White, 0.6f)
 
 /** 대표 색상 위에 올리는 글자색. 밝은 대표색(노랑·하늘)에는 어두운 글자를 쓴다. */
 val FeelsBand.onColor: Color

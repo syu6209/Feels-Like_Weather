@@ -49,11 +49,14 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onEditProfile: (String) -> Unit,
     onAddProfile: () -> Unit,
+    onOpenSurveyHistory: () -> Unit,
 ) {
     ThemedSystemBarIcons()
     val userData by vm.userData.collectAsStateWithLifecycle()
     val mine by vm.myThresholds.collectAsStateWithLifecycle()
     var confirmReset by rememberSaveable { mutableStateOf(false) }
+    val activeCount = userData.surveys.count { !it.isDeleted }
+    val deletedCount = userData.surveys.size - activeCount
     var showGraph by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -90,9 +93,20 @@ fun SettingsScreen(
             Section("내 체감")
             ListItem(
                 headlineContent = { Text("내 체감 그래프 보기") },
-                supportingContent = { Text("설문 ${userData.surveys.size}회 반영 · " + summary(mine)) },
+                supportingContent = { Text("설문 ${activeCount}회 반영 · " + summary(mine)) },
                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                 modifier = Modifier.clickable { showGraph = true },
+            )
+            ListItem(
+                headlineContent = { Text("내 체감 설문 기록 보기") },
+                supportingContent = {
+                    Text(
+                        "기록 ${activeCount}개" +
+                            if (deletedCount > 0) " · 삭제한 기록 ${deletedCount}개(7일 후 완전 삭제)" else ""
+                    )
+                },
+                trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                modifier = Modifier.clickable(onClick = onOpenSurveyHistory),
             )
             ListItem(
                 headlineContent = { Text("내 체감 구간 초기화", color = MaterialTheme.colorScheme.error) },
@@ -140,7 +154,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { confirmReset = false },
             title = { Text("내 체감 구간 초기화") },
-            text = { Text("설문 ${userData.surveys.size}건이 삭제되고 기본 체감 구간으로 돌아가요.") },
+            text = { Text("설문 기록 ${userData.surveys.size}건이 모두 삭제되고 기본 체감 구간으로 돌아가요.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmReset = false
@@ -153,7 +167,7 @@ fun SettingsScreen(
     if (showGraph) {
         FeelsInfoSheet(
             myThresholds = mine,
-            surveyCount = userData.surveys.size,
+            surveyCount = activeCount,
             currentApparent = vm.weather.value.forecast?.current?.apparentTemperature,
             onDismiss = { showGraph = false },
         )

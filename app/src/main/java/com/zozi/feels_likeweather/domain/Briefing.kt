@@ -12,6 +12,13 @@ data class BriefingPin(val index: Int, val pinnedAtMillis: Long)
 
 object Briefings {
 
+    /**
+     * 설문 응답이 예보 구간과 다를 때 잠깐 보여주는 반응 문구.
+     * 예) 예보 쌀쌀함, 응답 추움 → "생각보다 더 '춥게' 느끼셨군요!"
+     */
+    fun reaction(reported: FeelsBand, isNow: Boolean): BriefingPhrase =
+        BriefingPhrase("생각보다 더 ", reported.adverb, if (isNow) " 느끼시는군요!" else " 느끼셨군요!")
+
     const val PIN_DURATION_MILLIS = 60 * 60 * 1000L
 
     val phrases: Map<FeelsBand, List<BriefingPhrase>> = mapOf(

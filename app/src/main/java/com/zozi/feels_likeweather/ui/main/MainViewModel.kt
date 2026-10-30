@@ -56,7 +56,20 @@ data class SlotUi(
     val isDay: Boolean,
     val myBand: FeelsBand,
     val defaultBand: FeelsBand,
-)
+    /** 이 시간대에 직접 응답한 구간 (없으면 null). */
+    val answer: FeelsBand? = null,
+    /** 응답 당시 예보였던 구간. */
+    val predictedAtAnswer: FeelsBand? = null,
+) {
+    /** 화면에 보여줄 구간. 직접 응답한 시간대는 응답이 곧 정답이므로 응답 구간을 쓴다. */
+    val displayBand: FeelsBand get() = answer ?: myBand
+
+    /** 응답이 예보와 달라 "쌀쌀함 → 추움" 처럼 바뀐 구간을 보여줘야 하는지. */
+    val correctedFrom: FeelsBand? get() = predictedAtAnswer?.takeIf { answer != null && it != answer }
+}
+
+/** 설문 응답이 예보와 달랐을 때 체감 보정 예보 카드에 잠깐(2초) 보여주는 반응. */
+data class SurveyReaction(val slotKey: String, val from: FeelsBand, val to: FeelsBand, val phrase: BriefingPhrase)
 
 data class FeelsUi(
     val now: LocalDateTime,
@@ -65,10 +78,18 @@ data class FeelsUi(
     val briefing: BriefingPhrase,
     val myThresholds: FeelsThresholds,
     val answers: Map<String, FeelsBand>,
+    /** 선택된 시간대에 대한 반응이 진행 중이면 브리핑 대신 보여준다. */
+    val reaction: SurveyReaction? = null,
 )
 
 /** 현재 기준 12시간 전 ~ 48시간 후 시간대 박스와 각 시간대의 체감 데이터. */
-fun buildSlots(forecast: WeatherForecast, now: LocalDateTime, mine: FeelsThresholds): List<SlotUi> {
+fun buildSlots(
+    forecast: WeatherForecast,
+    now: LocalDateTime,
+    mine: FeelsThresholds,
+    records: List<SurveyRecord> = emptyList(),
+): List<SlotUi> {
+    val answered = records.filterNot { it.isDeleted }.associateBy { it.slotKey }
     fun slotUi(slot: TimeSlot, apparent: Double, temperature: Double, code: Int, isDay: Boolean) = SlotUi(
         slot = slot,
         apparent = apparent,
@@ -77,6 +98,8 @@ fun buildSlots(forecast: WeatherForecast, now: LocalDateTime, mine: FeelsThresho
         isDay = isDay,
         myBand = mine.bandOf(apparent),
         defaultBand = FeelsThresholds.DEFAULT.bandOf(apparent),
+        answer = answered[slot.key]?.reported,
+        predictedAtAnswer = answered[slot.key]?.predicted,
     )
 
     return TimeSlots.build(now).mapNotNull { slot ->
@@ -105,10 +128,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, UserData())
 
     val myThresholds: StateFlow<FeelsThresholds> = userData
-        .map { FeelsLearner.replay(it.surveys) }
+        .map { FeelsLearner.estimate(it.surveys, System.currentTimeMillis()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, FeelsThresholds.DEFAULT)
 
     private val selectedSlotKey = MutableStateFlow<String?>(null)
+    private val reaction = MutableStateFlow<SurveyReaction?>(null)
+    private var reactionJob: Job? = null
 
     /** 노출된 브리핑을 저장 완료 전에도 고정해 두기 위한 메모리 캐시. */
     private val pinCache = mutableMapOf<FeelsBand, BriefingPin>()
@@ -121,10 +146,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val feels: StateFlow<FeelsUi?> = combine(
-        _weather, userData, myThresholds, selectedSlotKey, minuteTicker,
-    ) { weather, data, mine, selectedKey, _ ->
+        _weather, userData, myThresholds, combine(selectedSlotKey, reaction, ::Pair), minuteTicker,
+    ) { weather, data, mine, (selectedKey, currentReaction), _ ->
         val forecast = weather.forecast ?: return@combine null
-        buildFeelsUi(forecast, data, mine, selectedKey)
+        buildFeelsUi(forecast, data, mine, selectedKey, currentReaction)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _messages = Channel<String>(Channel.BUFFERED)
@@ -137,13 +162,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         data: UserData,
         mine: FeelsThresholds,
         selectedKey: String?,
+        currentReaction: SurveyReaction?,
     ): FeelsUi? {
         val now = forecast.localNow()
-        val slots = buildSlots(forecast, now, mine)
+        val slots = buildSlots(forecast, now, mine, data.surveys)
         if (slots.isEmpty()) return null
         val selected = slots.firstOrNull { it.slot.key == selectedKey } ?: slots.first { it.slot.isCurrent }
 
-        val band = selected.myBand
+        val band = selected.displayBand
         val pin = pinCache[band] ?: data.briefingPins[band]
         val (phrase, newPin) = Briefings.pick(band, pin, System.currentTimeMillis())
         if (newPin != pin) {
@@ -157,7 +183,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             selected = selected,
             briefing = phrase,
             myThresholds = mine,
-            answers = data.surveys.associate { it.slotKey to it.reported },
+            answers = data.surveys.filterNot { it.isDeleted }.associate { it.slotKey to it.reported },
+            reaction = currentReaction?.takeIf { it.slotKey == selected.slot.key },
         )
     }
 
@@ -254,26 +281,76 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun answerSurvey(slot: SlotUi, reported: FeelsBand) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             val before = myThresholds.value
+            val existing = userData.value.surveys.firstOrNull { it.slotKey == slot.slot.key && !it.isDeleted }
             val records = userData.value.surveys.filterNot { it.slotKey == slot.slot.key } +
-                SurveyRecord(slot.slot.key, slot.apparent, reported, System.currentTimeMillis())
+                SurveyRecord(
+                    slotKey = slot.slot.key,
+                    apparentTemperature = slot.apparent,
+                    reported = reported,
+                    answeredAtMillis = now,
+                    // 다시 응답해도 "원래 예보" 는 처음 응답할 때의 예보로 유지한다.
+                    predicted = existing?.predicted ?: slot.myBand,
+                )
+
+            // 카드에 보이던 구간과 응답이 다르면 반응 문구 → 새 구간 브리핑 순서로 전환한다.
+            val shown = slot.displayBand
+            if (reported != shown) {
+                reactionJob?.cancel()
+                reaction.value = SurveyReaction(
+                    slotKey = slot.slot.key,
+                    from = shown,
+                    to = reported,
+                    phrase = Briefings.reaction(reported, isNow = slot.slot.isCurrent),
+                )
+                reactionJob = viewModelScope.launch {
+                    delay(REACTION_MILLIS)
+                    reaction.value = null
+                }
+            }
+
             prefs.saveSurveys(records)
-            val after = FeelsLearner.replay(records)
-            _messages.send(describeChange(before, after, reported))
+            val after = FeelsLearner.estimate(records, now)
+            _messages.send(describeChange(before, after) ?: "'${reported.surveyLabel}' 응답을 기록했어요.")
         }
     }
 
-    private fun describeChange(before: FeelsThresholds, after: FeelsThresholds, reported: FeelsBand): String {
+    /** 바뀐 분기점 설명. 바뀐 게 없으면 null. */
+    private fun describeChange(before: FeelsThresholds, after: FeelsThresholds): String? {
         val changes = FeelsBand.entries.drop(1).mapNotNull { band ->
             val b = before.lowerBoundOf(band)!!
             val a = after.lowerBoundOf(band)!!
             if (b == a) null else "${band.label} ${"%.1f".format(b)}°→${"%.1f".format(a)}°"
         }
-        return if (changes.isEmpty()) {
-            "'${reported.surveyLabel}' 응답을 기록했어요."
-        } else {
-            "내 체감 기준을 조정했어요 · " + changes.take(2).joinToString(", ")
+        if (changes.isEmpty()) return null
+        return "내 체감 기준을 조정했어요 · " + changes.take(2).joinToString(", ") +
+            if (changes.size > 2) " 외 ${changes.size - 2}개" else ""
+    }
+
+    /** 설문 기록을 삭제한다(7일 동안 되돌릴 수 있음). 바뀐 기준 설명을 돌려준다. */
+    suspend fun deleteSurvey(slotKey: String): String {
+        val now = System.currentTimeMillis()
+        val records = userData.value.surveys.map {
+            if (it.slotKey == slotKey && !it.isDeleted) it.copy(deletedAtMillis = now) else it
         }
+        return saveAndDescribe(records, now, "기록을 삭제했어요.")
+    }
+
+    /** 삭제한 기록을 원래 응답 시각 그대로 되살린다. 같은 시간대에 새 응답이 있으면 새 응답을 유지한다. */
+    suspend fun restoreSurvey(slotKey: String): String {
+        val now = System.currentTimeMillis()
+        val current = userData.value.surveys
+        if (current.any { it.slotKey == slotKey && !it.isDeleted }) return "같은 시간대에 새 응답이 있어 되돌리지 않았어요."
+        val records = current.map { if (it.slotKey == slotKey) it.copy(deletedAtMillis = null) else it }
+        return saveAndDescribe(records, now, "기록을 되돌렸어요.")
+    }
+
+    private suspend fun saveAndDescribe(records: List<SurveyRecord>, now: Long, done: String): String {
+        val before = FeelsLearner.estimate(userData.value.surveys, now)
+        prefs.saveSurveys(records)
+        val after = FeelsLearner.estimate(records, now)
+        return describeChange(before, after)?.let { "$done $it" } ?: done
     }
 
     fun resetSurveys() {
@@ -311,7 +388,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // endregion
 
+    init {
+        // 삭제 후 7일이 지난 기록은 앱을 열 때 정리한다.
+        viewModelScope.launch {
+            val surveys = prefs.userData.first().surveys
+            if (FeelsLearner.purge(surveys, System.currentTimeMillis()).size != surveys.size) {
+                prefs.saveSurveys(surveys)
+            }
+        }
+    }
+
     companion object {
+        const val REACTION_MILLIS = 2_000L
         val SEOUL = Place("서울특별시", "대한민국", 37.5665, 126.9780)
     }
 }

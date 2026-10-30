@@ -103,9 +103,11 @@ fun FeelsInfoSheet(
             Text("내 체감 보정 방식", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "설문에서 예보와 다른 구간을 고르면, 그 시간의 체감온도 쪽으로 해당 분기점을 절반씩 옮겨요. " +
-                    "예) 18°가 '선선함'인데 '따뜻했음'을 고르면 '따뜻함'이 시작되는 온도가 낮아져요. " +
-                    "응답이 쌓일수록 점점 내 체감에 가까워지고, 구간 순서는 항상 유지돼요.",
+                "모든 설문 응답을 함께 보고, 각 분기점에서 '그 온도 이상으로 느꼈는지'를 가장 잘 설명하는 온도를 찾아요. " +
+                    "응답이 적을 땐 기본값 근처에 머물고, 쌓일수록 내 응답 쪽으로 옮겨가요. " +
+                    "예) 18°가 '선선함'인데 '따뜻했음'을 고르면 '따뜻함' 시작 온도가 20° → 17.5°로 낮아져요. " +
+                    "예보와 같은 구간을 고른 응답도 지금 기준이 맞다는 근거가 되고, 최근 응답일수록 크게 반영돼요(60일마다 절반). " +
+                    "기록을 지우거나 되돌리면 그 응답을 빼거나 넣고 다시 계산해서, 되돌리면 정확히 원래대로 돌아와요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

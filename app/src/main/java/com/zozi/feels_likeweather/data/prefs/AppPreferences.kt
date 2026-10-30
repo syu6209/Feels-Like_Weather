@@ -10,6 +10,7 @@ import com.zozi.feels_likeweather.data.model.Place
 import com.zozi.feels_likeweather.domain.AgeGroup
 import com.zozi.feels_likeweather.domain.BriefingPin
 import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.FeelsLearner
 import com.zozi.feels_likeweather.domain.Profile
 import com.zozi.feels_likeweather.domain.SurveyRecord
 import kotlinx.coroutines.flow.Flow
@@ -58,8 +59,11 @@ class AppPreferences(private val context: Context) {
         it[Keys.PROFILES] = Codec.encodeProfiles(ensureMine(profiles))
     }
 
+    /** 설문 기록 저장. 삭제 후 7일이 지난 기록은 이때 완전히 지운다. */
     suspend fun saveSurveys(records: List<SurveyRecord>) = context.dataStore.edit {
-        it[Keys.SURVEYS] = Codec.encodeSurveys(records.takeLast(MAX_SURVEYS))
+        val kept = FeelsLearner.purge(records, System.currentTimeMillis())
+        val (deleted, active) = kept.partition { r -> r.isDeleted }
+        it[Keys.SURVEYS] = Codec.encodeSurveys(active.takeLast(MAX_SURVEYS) + deleted)
     }
 
     suspend fun saveBriefingPins(pins: Map<FeelsBand, BriefingPin>) = context.dataStore.edit {
@@ -124,6 +128,10 @@ internal object Codec {
                     .put("t", r.apparentTemperature)
                     .put("band", r.reported.name)
                     .put("at", r.answeredAtMillis)
+                    .apply {
+                        r.predicted?.let { put("predicted", it.name) }
+                        r.deletedAtMillis?.let { put("deletedAt", it) }
+                    }
             )
         }
     }.toString()
@@ -133,7 +141,15 @@ internal object Codec {
         (0 until a.length()).mapNotNull { i ->
             val o = a.getJSONObject(i)
             val band = runCatching { FeelsBand.valueOf(o.getString("band")) }.getOrNull() ?: return@mapNotNull null
-            SurveyRecord(o.getString("slot"), o.getDouble("t"), band, o.getLong("at"))
+            SurveyRecord(
+                slotKey = o.getString("slot"),
+                apparentTemperature = o.getDouble("t"),
+                reported = band,
+                answeredAtMillis = o.getLong("at"),
+                predicted = o.optString("predicted").takeIf { it.isNotEmpty() }
+                    ?.let { runCatching { FeelsBand.valueOf(it) }.getOrNull() },
+                deletedAtMillis = if (o.has("deletedAt")) o.getLong("deletedAt") else null,
+            )
         }
     }.getOrDefault(emptyList())
 

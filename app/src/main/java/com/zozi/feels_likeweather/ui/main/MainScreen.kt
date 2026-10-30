@@ -191,7 +191,7 @@ fun MainScreen(
                         val f = feels
                         if (forecast != null && f != null) {
                             item(key = "feels") {
-                                FeelsForecastCard(f, userData.surveys.size, onSelectSlot = vm::selectSlot)
+                                FeelsForecastCard(f, userData.surveys.count { !it.isDeleted }, onSelectSlot = vm::selectSlot)
                             }
                             item(key = "survey") {
                                 FeelsSurveyCard(f, onAnswer = { band -> vm.answerSurvey(f.selected, band) })
