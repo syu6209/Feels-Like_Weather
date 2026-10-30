@@ -72,19 +72,36 @@ data class ActivityWindow(
     val heavyRain: Boolean get() = hours.any { isHeavyRain(it.weatherCode) } || precipitationSum >= 10.0
     val snow: Boolean get() = hours.any { isSnow(it.weatherCode) }
 
+    /** 활동 시간대 평균 체감온도. 해당 날짜의 대표 체감으로 쓴다. */
+    val meanApparent: Double? get() = hours.takeIf { it.isNotEmpty() }?.map { it.apparentTemperature }?.average()
+
     companion object {
-        /** 다가오는(또는 진행 중인) 활동 시간대. 오늘 활동이 끝났다면 내일 활동 시간대. */
-        fun of(forecast: WeatherForecast, profile: Profile, now: LocalDateTime): ActivityWindow {
-            val todayEnd = now.toLocalDate().atStartOfDay().plusHours(profile.activityEndHour.toLong())
-            val dayOffset = if (!now.isBefore(todayEnd)) 1L else 0L
-            val date = now.toLocalDate().plusDays(dayOffset)
+        /**
+         * 처음 보여줄 날짜. 오늘 활동 시간이 끝났으면(오늘 밤) 내일, 아니면(오늘 아침·낮) 오늘.
+         * @return 오늘 기준 날짜 차이 (0 = 오늘, 1 = 내일)
+         */
+        fun defaultDayOffset(profile: Profile, now: LocalDateTime): Int =
+            if (now.hour >= profile.activityEndHour) 1 else 0
+
+        /** 다가오는(또는 진행 중인) 활동 시간대. */
+        fun of(forecast: WeatherForecast, profile: Profile, now: LocalDateTime): ActivityWindow =
+            forDay(forecast, profile, now, defaultDayOffset(profile, now))
+
+        /**
+         * [dayOffset] 일 뒤의 활동 시간대. 오늘이고 활동이 이미 시작됐다면 지금부터 끝까지만 본다.
+         */
+        fun forDay(forecast: WeatherForecast, profile: Profile, now: LocalDateTime, dayOffset: Int): ActivityWindow {
+            val date = now.toLocalDate().plusDays(dayOffset.toLong())
             val start = date.atStartOfDay().plusHours(profile.activityStartHour.toLong())
             val end = date.atStartOfDay().plusHours(profile.activityEndHour.toLong())
-            val from = if (dayOffset == 0L && now.isAfter(start)) now.withMinute(0).withSecond(0).withNano(0) else start
+            val nowHour = now.withMinute(0).withSecond(0).withNano(0)
+            val from = if (dayOffset == 0 && nowHour.isAfter(start) && nowHour.isBefore(end)) nowHour else start
             val hours = forecast.hourly.filter { !it.time.isBefore(from) && it.time.isBefore(end) }
-            val day = if (dayOffset == 0L) "오늘" else "내일"
             val endLabel = if (profile.activityEndHour == 24) "24시" else "${profile.activityEndHour}시"
-            return ActivityWindow("$day ${profile.activityStartHour}시~$endLabel", hours)
+            return ActivityWindow(
+                "${TimeSlots.dayLabel(dayOffset.toLong())} ${profile.activityStartHour}시~$endLabel",
+                hours,
+            )
         }
     }
 }
