@@ -45,6 +45,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.zozi.feels_likeweather.domain.FeelsBand
 import com.zozi.feels_likeweather.ui.components.ParticleLayer
+import com.zozi.feels_likeweather.ui.components.HorizontalListMargin
 import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.components.rememberParticleBurstState
 import com.zozi.feels_likeweather.ui.main.FeelsUi
@@ -104,7 +105,11 @@ fun FeelsSurveyCard(
                 )
                 Spacer(Modifier.height(14.dp))
 
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                BoxWithConstraints(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = HorizontalListMargin),
+                ) {
                     // 한 화면에 버튼 3개 + 양쪽에 다음 버튼 모서리만 살짝 보이도록 너비 계산
                     val buttonWidth = (maxWidth - PeekWidth * 2 - ButtonSpacing * 4) / 3
                     val listState = rememberLazyListState()

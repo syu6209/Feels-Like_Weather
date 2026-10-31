@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zozi.feels_likeweather.ui.components.BriefingText
 import com.zozi.feels_likeweather.ui.components.WeatherIcon
+import com.zozi.feels_likeweather.ui.components.HorizontalListMargin
 import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.main.FeelsUi
 import com.zozi.feels_likeweather.ui.main.SlotUi
@@ -159,8 +160,11 @@ private fun TimeSlotRow(feels: FeelsUi, onSelect: (String) -> Unit) {
     }
     LazyRow(
         state = listState,
-        modifier = Modifier.horizontalFadingEdges(state = listState),
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        // 카드 가장자리에서 여백을 둔 안쪽에서 흐려지도록 하고, 처음 위치는 제목(20dp)과 맞춘다.
+        modifier = Modifier
+            .padding(horizontal = HorizontalListMargin)
+            .horizontalFadingEdges(state = listState),
+        contentPadding = PaddingValues(horizontal = 20.dp - HorizontalListMargin),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(feels.slots, key = { it.slot.key }) { slot ->

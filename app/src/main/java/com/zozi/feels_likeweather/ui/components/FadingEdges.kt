@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+/** 카드 테두리와 가로 스크롤 목록(흐림 포함) 사이 여백. */
+val HorizontalListMargin = 12.dp
+
 /**
  * 카드 안 가로 스크롤 목록의 양 끝을 투명하게 흐려, 카드 여백 쪽으로 자연스럽게 사라지게 한다.
  * [state] 를 주면 더 스크롤할 수 있는 쪽에만 흐림을 적용한다.
