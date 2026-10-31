@@ -25,6 +25,28 @@ data class WeatherForecast(
     }
 
     fun today(): DailyWeather? = daily.firstOrNull { it.date == localNow().toLocalDate() }
+
+    /**
+     * 저장해 둔 예보를 나중에 볼 때, 받을 당시의 "현재 날씨" 대신 지금 시각의 시간별 예보로 현재 날씨를 바꾼다.
+     * 같은 시간대이거나 지금 시각의 예보가 없으면 그대로 둔다.
+     */
+    fun currentAt(now: LocalDateTime): WeatherForecast {
+        val hour = now.withMinute(0).withSecond(0).withNano(0)
+        if (!current.time.isBefore(hour)) return this
+        val h = hourlyAt(hour) ?: return this
+        return copy(
+            current = CurrentWeather(
+                time = h.time,
+                temperature = h.temperature,
+                apparentTemperature = h.apparentTemperature,
+                humidity = h.humidity,
+                weatherCode = h.weatherCode,
+                windSpeed = h.windSpeed,
+                precipitation = h.precipitation,
+                isDay = h.isDay,
+            )
+        )
+    }
 }
 
 data class CurrentWeather(

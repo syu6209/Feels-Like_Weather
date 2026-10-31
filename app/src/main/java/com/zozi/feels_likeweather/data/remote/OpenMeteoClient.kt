@@ -24,11 +24,8 @@ import kotlin.math.roundToInt
  */
 class OpenMeteoClient {
 
+    /** 어제(지난 12시간 시간대용)부터 오늘 포함 7일치 예보. */
     suspend fun fetchForecast(latitude: Double, longitude: Double): WeatherForecast =
-        parseForecast(JSONObject(fetchForecastJson(latitude, longitude)), System.currentTimeMillis())
-
-    /** 예보 원본 JSON. 위젯용 캐시에 그대로 저장한다. */
-    suspend fun fetchForecastJson(latitude: Double, longitude: Double): String =
         withContext(Dispatchers.IO) {
             val url = buildString {
                 append("https://api.open-meteo.com/v1/forecast")
@@ -37,9 +34,9 @@ class OpenMeteoClient {
                 append("&current=").append(CURRENT_FIELDS)
                 append("&hourly=").append(HOURLY_FIELDS)
                 append("&daily=").append(DAILY_FIELDS)
-                append("&timezone=auto&past_days=1&forecast_days=10&wind_speed_unit=ms")
+                append("&timezone=auto&past_days=1&forecast_days=7&wind_speed_unit=ms")
             }
-            get(url)
+            parseForecast(JSONObject(get(url)), System.currentTimeMillis())
         }
 
     suspend fun searchPlaces(query: String): List<Place> = withContext(Dispatchers.IO) {

@@ -14,13 +14,15 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.compose
 import androidx.test.core.app.ApplicationProvider
-import com.zozi.feels_likeweather.data.cache.ForecastCache
+import com.zozi.feels_likeweather.data.local.WeatherStore
+import com.zozi.feels_likeweather.data.remote.OpenMeteoClient
 import com.zozi.feels_likeweather.widget.ClothingWidget
 import com.zozi.feels_likeweather.widget.FeelsWidget
 import com.zozi.feels_likeweather.widget.WidgetSettings
 import com.zozi.feels_likeweather.widget.WidgetSizes
 import com.zozi.feels_likeweather.widget.WidgetTextMode
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,7 +45,12 @@ class WidgetScreenshotTest {
     @Before
     fun cacheForecast() {
         val json = javaClass.classLoader!!.getResource("forecast_seoul.json").readText()
-        runBlocking { ForecastCache(context).save(json, "중구(서울특별시)", 37.5665, 126.978) }
+        val forecast = OpenMeteoClient.parseForecast(JSONObject(json), System.currentTimeMillis())
+        runBlocking {
+            val store = WeatherStore(context)
+            store.save(WeatherStore.CURRENT_LOCATION_KEY, "중구(서울특별시)", 37.5665, 126.978, forecast)
+            store.markViewed(WeatherStore.CURRENT_LOCATION_KEY)
+        }
     }
 
     private fun settings(

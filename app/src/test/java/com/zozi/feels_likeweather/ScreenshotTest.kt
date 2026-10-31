@@ -64,7 +64,7 @@ class ScreenshotTest {
 
     private val forecast: WeatherForecast = OpenMeteoClient.parseForecast(
         JSONObject(javaClass.classLoader!!.getResource("forecast_seoul.json").readText()),
-        fetchedAtMillis = 0L,
+        fetchedAtMillis = java.time.OffsetDateTime.parse("2026-10-30T15:30+09:00").toInstant().toEpochMilli(),
     )
 
     /** 계절별 그래프가 달라 보이도록 여름·가을 응답을 섞은 예시 기록. */
@@ -135,7 +135,19 @@ class ScreenshotTest {
 
     @Test
     fun header() = shot("01_header") {
-        Page { CurrentWeatherHeader(forecast, Modifier.padding(vertical = 40.dp)) }
+        Page { CurrentWeatherHeader(forecast, Modifier.padding(vertical = 40.dp), nowMillis = forecast.fetchedAtMillis) }
+    }
+
+    /** 저장된 지 6시간 넘은 날씨(오프라인)에는 기준 시각이 작게 붙는다. */
+    @Test
+    fun headerStale() = shot("01_header_stale") {
+        Page {
+            CurrentWeatherHeader(
+                forecast,
+                Modifier.padding(vertical = 40.dp),
+                nowMillis = forecast.fetchedAtMillis + 7 * 3_600_000L,
+            )
+        }
     }
 
     @Test

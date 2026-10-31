@@ -27,9 +27,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zozi.feels_likeweather.data.local.WeatherStore
 import com.zozi.feels_likeweather.data.model.WeatherForecast
 import com.zozi.feels_likeweather.data.model.weatherDescription
 import com.zozi.feels_likeweather.ui.components.WeatherIcon
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
@@ -88,7 +90,11 @@ fun rememberCollapsingHeaderState(maxHeightPx: Float): CollapsingHeaderState =
 
 /** 현재 날씨를 가운데에 가장 크게 보여주는 헤더 (애플·구글·삼성 날씨 스타일 종합). */
 @Composable
-fun CurrentWeatherHeader(forecast: WeatherForecast, modifier: Modifier = Modifier) {
+fun CurrentWeatherHeader(
+    forecast: WeatherForecast,
+    modifier: Modifier = Modifier,
+    nowMillis: Long = System.currentTimeMillis(),
+) {
     val c = forecast.current
     val today = forecast.today()
     Column(
@@ -126,11 +132,17 @@ fun CurrentWeatherHeader(forecast: WeatherForecast, modifier: Modifier = Modifie
             fontSize = 15.sp,
             color = Color.White.copy(alpha = 0.85f),
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "${c.time.format(DateTimeFormatter.ofPattern("M월 d일 HH:mm"))} 기준",
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.7f),
-        )
+        // 저장된 날씨가 6시간 이상 지났으면(오프라인 등) 언제 받은 날씨인지 작게 알려준다.
+        val fetchedAt = forecast.fetchedAtMillis
+        if (nowMillis - fetchedAt >= WeatherStore.SHOW_BASIS_AFTER_MILLIS) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${Instant.ofEpochMilli(fetchedAt).atOffset(forecast.zoneOffset).format(BasisFormat)} 기준 날씨",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.75f),
+            )
+        }
     }
 }
+
+private val BasisFormat = DateTimeFormatter.ofPattern("M월 d일 HH:mm")

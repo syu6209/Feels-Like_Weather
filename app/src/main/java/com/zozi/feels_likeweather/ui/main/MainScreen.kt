@@ -59,7 +59,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.zozi.feels_likeweather.data.model.weatherDescription
 import com.zozi.feels_likeweather.ui.cards.ClothingCard
 import com.zozi.feels_likeweather.ui.cards.DailyForecastCard
@@ -70,6 +73,7 @@ import com.zozi.feels_likeweather.ui.cards.WeatherCard
 import com.zozi.feels_likeweather.ui.cards.WeatherDetailsCard
 import com.zozi.feels_likeweather.ui.components.SystemBarIcons
 import com.zozi.feels_likeweather.ui.components.skyBrush
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private val HeaderHeight = 300.dp
@@ -103,6 +107,17 @@ fun MainScreen(
     }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
+    // 화면이 보이는 동안 1분마다: 받은 지 30분이 지났으면 새로 받고, 저장된 예보의 현재 시각을 맞춘다.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                vm.onTick()
+                delay(60_000)
+            }
+        }
+    }
+
     SystemBarIcons(lightIcons = true)
 
     val forecast = weather.forecast
@@ -129,8 +144,8 @@ fun MainScreen(
             )
 
             PullToRefreshBox(
-                isRefreshing = weather.loading && forecast != null,
-                onRefresh = vm::loadWeather,
+                isRefreshing = weather.refreshing,
+                onRefresh = vm::refresh,
                 modifier = Modifier.weight(1f),
             ) {
                 Column(
@@ -157,7 +172,12 @@ fun MainScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
-                            forecast != null -> CurrentWeatherHeader(forecast, Modifier.fillMaxSize())
+                            forecast != null -> CurrentWeatherHeader(
+                                forecast,
+                                Modifier.fillMaxSize(),
+                                // 1분마다 바뀌는 체감 화면 시각에 맞춰 기준 시각 표시 여부를 다시 계산한다.
+                                nowMillis = remember(feels?.now) { System.currentTimeMillis() },
+                            )
                             weather.loading -> CircularProgressIndicator(color = Color.White)
                             else -> Text(weather.error.orEmpty(), color = Color.White)
                         }
@@ -182,7 +202,7 @@ fun MainScreen(
                         }
                         if (weather.error != null) {
                             item(key = "error", span = StaggeredGridItemSpan.FullLine) {
-                                NoticeCard(weather.error!!, actionLabel = "다시 시도", onAction = vm::loadWeather)
+                                NoticeCard(weather.error!!, actionLabel = "다시 시도", onAction = vm::refresh)
                             }
                         }
                         val f = feels
