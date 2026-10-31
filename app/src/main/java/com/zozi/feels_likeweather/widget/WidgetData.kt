@@ -1,7 +1,8 @@
 package com.zozi.feels_likeweather.widget
 
 import android.content.Context
-import com.zozi.feels_likeweather.data.cache.ForecastCache
+import com.zozi.feels_likeweather.data.local.StoredForecast
+import com.zozi.feels_likeweather.data.local.WeatherStore
 import com.zozi.feels_likeweather.data.prefs.AppPreferences
 import com.zozi.feels_likeweather.data.prefs.UserData
 import com.zozi.feels_likeweather.domain.ActivityPlanner
@@ -42,10 +43,12 @@ data class ClothingWidgetModel(
 /** 위젯이 앱 없이 그릴 수 있도록 캐시된 예보와 저장된 사용자 데이터로 화면 데이터를 만든다. */
 object WidgetData {
 
-    private suspend fun load(context: Context): Pair<com.zozi.feels_likeweather.data.cache.CachedForecast, UserData>? {
-        val cached = ForecastCache(context).load() ?: return null
+    /** 마지막으로 본 지역의 저장된 날씨(5일 이내). 받은 뒤 시간이 지났으면 현재 날씨를 지금 시각 예보로 맞춘다. */
+    private suspend fun load(context: Context): Pair<StoredForecast, UserData>? {
+        val stored = WeatherStore(context).lastViewed() ?: return null
+        val forecast = stored.forecast.currentAt(stored.forecast.localNow())
         val data = AppPreferences(context).userData.first()
-        return cached to data
+        return stored.copy(forecast = forecast) to data
     }
 
     suspend fun feels(context: Context): FeelsWidgetModel? {

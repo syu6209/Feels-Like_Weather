@@ -3,7 +3,8 @@ package com.zozi.feels_likeweather.ui.main
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.zozi.feels_likeweather.data.cache.ForecastCache
+import com.zozi.feels_likeweather.data.local.StoredForecast
+import com.zozi.feels_likeweather.data.local.WeatherStore
 import com.zozi.feels_likeweather.data.location.LocationClient
 import com.zozi.feels_likeweather.data.location.PlaceNameResolver
 import com.zozi.feels_likeweather.data.model.Place
@@ -43,15 +44,24 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 data class WeatherState(
+    /** 보여줄 날씨 없이 불러오는 중. */
     val loading: Boolean = true,
+    /** 당겨서 새로고침 중. */
+    val refreshing: Boolean = false,
     val forecast: WeatherForecast? = null,
     val placeName: String? = null,
     val usingCurrentLocation: Boolean = true,
+    /** 마지막 갱신에 실패해 저장된 날씨를 보여주는 중. */
+    val offline: Boolean = false,
     val notice: String? = null,
     val error: String? = null,
 )
@@ -123,6 +133,14 @@ fun buildSlots(
     }
 }
 
+/** 두 좌표 사이 거리(km, 하버사인). */
+fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+    return 6371.0 * 2 * atan2(sqrt(a), sqrt(1 - a))
+}
+
 @OptIn(FlowPreview::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -130,7 +148,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val locationClient = LocationClient(app)
     private val placeResolver = PlaceNameResolver(app)
     private val prefs = AppPreferences(app)
-    private val forecastCache = ForecastCache(app)
+    private val store = WeatherStore(app)
 
     private val _weather = MutableStateFlow(WeatherState())
     val weather: StateFlow<WeatherState> = _weather.asStateFlow()
@@ -216,50 +234,123 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadWeather()
     }
 
-    /** 현재 선택된 지역(없으면 현재 위치)의 날씨를 불러온다. */
-    fun loadWeather() {
+    /** 당겨서 새로고침 · 다시 시도: 30분이 지나지 않았어도 새로 받는다. */
+    fun refresh() = loadWeather(force = true, userInitiated = true)
+
+    /**
+     * 화면이 보이는 동안 1분마다 부른다. 받은 지 30분이 지났으면 새로 받고,
+     * 저장된 예보를 보는 중이면 시각이 바뀐 만큼 현재 날씨를 시간별 예보로 바꾼다.
+     */
+    fun onTick() {
+        if (!started || loadJob?.isActive == true) return
+        val forecast = _weather.value.forecast ?: return
+        if (System.currentTimeMillis() - forecast.fetchedAtMillis >= WeatherStore.REFRESH_INTERVAL_MILLIS) {
+            loadWeather(quiet = true)
+        } else {
+            _weather.update { it.copy(forecast = forecast.currentAt(forecast.localNow())) }
+        }
+    }
+
+    /**
+     * 선택된 지역(없으면 현재 위치)의 날씨를 보여준다.
+     * 1. 로컬 DB 에 저장된 날씨(5일 이내)를 바로 보여주고
+     * 2. 받은 지 30분이 지났거나([force]) 현재 위치가 바뀌었으면 새로 받아 저장한다.
+     * 새로 받지 못하면(오프라인) 저장된 날씨를 계속 보여준다.
+     */
+    private fun loadWeather(force: Boolean = false, userInitiated: Boolean = false, quiet: Boolean = false) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _weather.update { it.copy(loading = true, error = null) }
             val place = prefs.userData.first().selectedPlace
+            val key = place?.id ?: WeatherStore.CURRENT_LOCATION_KEY
+            val cached = store.load(key)
+            if (cached != null) {
+                show(cached, usingCurrentLocation = place == null)
+                store.markViewed(key)
+                WidgetUpdater.updateAll(getApplication())
+            } else {
+                _weather.update {
+                    // 다른 지역으로 바꿨는데 저장된 날씨가 없으면 이전 지역 날씨를 지우고 불러온다.
+                    val samePlace = it.usingCurrentLocation == (place == null) && (place == null || it.placeName == place.name)
+                    if (samePlace) it.copy(loading = it.forecast == null, error = null)
+                    else WeatherState(loading = true, placeName = place?.name, usingCurrentLocation = place == null)
+                }
+            }
+            _weather.update { it.copy(refreshing = userInitiated) }
+
             try {
                 var notice: String? = null
-                val (lat, lon, name) = if (place != null) {
-                    Triple(place.latitude, place.longitude, place.name)
-                } else {
-                    val location = locationClient.currentLocation()
-                    if (location == null) {
-                        notice = if (locationClient.hasPermission()) {
-                            "현재 위치를 찾지 못해 서울 날씨를 보여드려요."
-                        } else {
-                            "위치 권한이 없어 서울 날씨를 보여드려요. 지역 선택에서 다른 지역을 고를 수 있어요."
+                val target: Target = when {
+                    place != null -> Target(place.latitude, place.longitude, place.name)
+                    else -> {
+                        val location = locationClient.currentLocation()
+                        when {
+                            location != null -> Target(location.latitude, location.longitude, name = null)
+                            // 위치를 못 찾으면 마지막으로 저장한 현재 위치를 쓴다.
+                            cached != null -> Target(cached.latitude, cached.longitude, cached.placeName)
+                            else -> {
+                                notice = if (locationClient.hasPermission()) {
+                                    "현재 위치를 찾지 못해 서울 날씨를 보여드려요."
+                                } else {
+                                    "위치 권한이 없어 서울 날씨를 보여드려요. 지역 선택에서 다른 지역을 고를 수 있어요."
+                                }
+                                Target(SEOUL.latitude, SEOUL.longitude, SEOUL.name)
+                            }
                         }
-                        Triple(SEOUL.latitude, SEOUL.longitude, SEOUL.name)
-                    } else {
-                        val resolved = placeResolver.displayName(location.latitude, location.longitude)
-                        Triple(location.latitude, location.longitude, resolved ?: "현재 위치")
                     }
                 }
-                val json = api.fetchForecastJson(lat, lon)
-                val forecast = OpenMeteoClient.parseForecast(JSONObject(json), System.currentTimeMillis())
-                // 위젯이 앱 없이도 그릴 수 있도록 마지막 예보와 좌표를 저장하고 위젯을 갱신한다.
-                forecastCache.save(json, name, lat, lon)
+
+                val now = System.currentTimeMillis()
+                val moved = cached != null &&
+                    distanceKm(cached.latitude, cached.longitude, target.latitude, target.longitude) > MOVED_KM
+                if (cached != null && !force && !moved && !cached.isStale(now)) {
+                    _weather.update { it.copy(refreshing = false, notice = notice) }
+                    return@launch
+                }
+
+                val name = target.name
+                    ?: placeResolver.displayName(target.latitude, target.longitude)
+                    ?: cached?.placeName?.takeIf { !moved }
+                    ?: "현재 위치"
+                val forecast = api.fetchForecast(target.latitude, target.longitude)
+                store.save(key, name, target.latitude, target.longitude, forecast)
+                store.markViewed(key)
                 WidgetUpdater.updateAll(getApplication())
-                _weather.value = WeatherState(
-                    loading = false,
-                    forecast = forecast,
-                    placeName = name,
+                show(
+                    StoredForecast(key, name, target.latitude, target.longitude, forecast),
                     usingCurrentLocation = place == null,
                     notice = notice,
                 )
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                val showing = _weather.value.forecast != null
                 _weather.update {
-                    it.copy(loading = false, error = "날씨 정보를 불러오지 못했어요. 네트워크 상태를 확인해주세요.")
+                    if (showing) {
+                        it.copy(loading = false, refreshing = false, offline = true)
+                    } else {
+                        it.copy(loading = false, refreshing = false, error = "날씨 정보를 불러오지 못했어요. 네트워크 상태를 확인해주세요.")
+                    }
                 }
+                if (showing && !quiet) _messages.send("인터넷에 연결할 수 없어 저장된 날씨를 보여드려요.")
             }
         }
     }
+
+    private fun show(stored: StoredForecast, usingCurrentLocation: Boolean, notice: String? = null) {
+        val forecast = stored.forecast
+        _weather.update {
+            it.copy(
+                loading = false,
+                forecast = forecast.currentAt(forecast.localNow()),
+                placeName = stored.placeName,
+                usingCurrentLocation = usingCurrentLocation,
+                offline = false,
+                notice = notice,
+                error = null,
+            )
+        }
+    }
+
+    private data class Target(val latitude: Double, val longitude: Double, val name: String?)
 
     fun selectPlace(place: Place?) {
         viewModelScope.launch {
@@ -269,13 +360,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             prefs.saveSelectedPlace(place)
             selectedSlotKey.value = null
-            loadWeather()
+            loadWeather(quiet = true)
         }
     }
 
     fun removeSavedPlace(place: Place) {
         viewModelScope.launch {
             prefs.saveSavedPlaces(userData.value.savedPlaces.filterNot { it.id == place.id })
+            store.delete(place.id)
             if (userData.value.selectedPlace?.id == place.id) selectPlace(null)
         }
     }
@@ -420,6 +512,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val REACTION_MILLIS = 2_000L
+
+        /** 현재 위치가 이만큼 바뀌면 30분이 지나지 않았어도 새로 받는다. */
+        const val MOVED_KM = 3.0
         val SEOUL = Place("서울특별시", "대한민국", 37.5665, 126.9780)
     }
 }

@@ -34,6 +34,7 @@ import com.zozi.feels_likeweather.domain.ClothingRecommender
 import com.zozi.feels_likeweather.domain.FeelsThresholds
 import com.zozi.feels_likeweather.domain.TimeSlot
 import com.zozi.feels_likeweather.ui.components.WeatherIcon
+import com.zozi.feels_likeweather.ui.components.HorizontalListMargin
 import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.theme.composeColor
 import java.time.format.TextStyle
@@ -50,8 +51,10 @@ fun HourlyForecastCard(forecast: WeatherForecast, modifier: Modifier = Modifier)
         val listState = rememberLazyListState()
         LazyRow(
             state = listState,
-            modifier = Modifier.horizontalFadingEdges(state = listState),
-            contentPadding = PaddingValues(horizontal = 20.dp),
+            modifier = Modifier
+                .padding(horizontal = HorizontalListMargin)
+                .horizontalFadingEdges(state = listState),
+            contentPadding = PaddingValues(horizontal = 20.dp - HorizontalListMargin),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(hours, key = { it.time.toString() }) { h ->

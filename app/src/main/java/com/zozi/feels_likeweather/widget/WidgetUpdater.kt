@@ -11,7 +11,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.zozi.feels_likeweather.data.cache.ForecastCache
+import com.zozi.feels_likeweather.data.local.WeatherStore
 import com.zozi.feels_likeweather.data.remote.OpenMeteoClient
 import java.util.concurrent.TimeUnit
 
@@ -37,7 +37,7 @@ object WidgetUpdater {
         }
     }
 
-    /** 위젯이 하나라도 있으면 30분마다 마지막 좌표의 예보를 받아 위젯을 갱신한다. */
+    /** 위젯이 하나라도 있으면 30분마다 마지막으로 본 지역의 예보를 받아 위젯을 갱신한다. */
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<WidgetRefreshWorker>(30, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -56,19 +56,29 @@ object WidgetUpdater {
 }
 
 /**
- * 백그라운드 위치 권한 없이, 앱이 마지막으로 저장한 좌표로 예보만 다시 받아 캐시와 위젯을 갱신한다.
+ * 백그라운드 위치 권한 없이, 마지막으로 본 지역의 좌표로 예보만 다시 받아 로컬 DB 와 위젯을 갱신한다.
+ * 앱이 이미 30분 안에 받아 두었으면 API 를 부르지 않는다.
  */
 class WidgetRefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val cache = ForecastCache(applicationContext)
-        val last = cache.load() ?: return Result.success()
+        val store = WeatherStore(applicationContext)
+        val last = store.lastViewed() ?: return Result.success()
+        // 주기 작업은 실행 시각이 몇 분씩 흔들리므로 5분 여유를 둔다.
+        if (!last.isStale(System.currentTimeMillis(), WeatherStore.REFRESH_INTERVAL_MILLIS - FLEX_MILLIS)) {
+            WidgetUpdater.updateAll(applicationContext)
+            return Result.success()
+        }
         return try {
-            val json = OpenMeteoClient().fetchForecastJson(last.latitude, last.longitude)
-            cache.save(json, last.placeName, last.latitude, last.longitude)
+            val forecast = OpenMeteoClient().fetchForecast(last.latitude, last.longitude)
+            store.save(last.key, last.placeName, last.latitude, last.longitude, forecast)
             WidgetUpdater.updateAll(applicationContext)
             Result.success()
         } catch (e: Exception) {
             Result.retry()
         }
+    }
+
+    private companion object {
+        const val FLEX_MILLIS = 5 * 60 * 1000L
     }
 }

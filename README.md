@@ -6,7 +6,14 @@ Open-Meteo 날씨에 체감 설문 데이터를 쌓아 "내 체감 구간"을 �
 ## 주요 기능
 
 - **현재 위치 날씨**: 위치 권한 + Fused Location, 내장 Geocoder 로 상단바에 `지역명(도시명)의 날씨` 표시
+- **상단바 지역명**: 누르면 현재 위치 · 저장한 지역 드롭다운과 맨 아래 `지역 추가`, 저장한 지역이 없으면 바로 지역 선택 화면
 - **상단바 메뉴(⋮)**: 지역 선택 / 설정
+- **날씨 캐시 · 오프라인**: 받아온 7일치(오늘 포함, 지난 12시간 시간대용 어제 포함) 예보를 지역별로 로컬 DB(SQLite)에 저장
+  - 앱을 열면 저장된 날씨를 바로 보여주고, 받은 지 30분이 지났을 때만 API 로 새로 받음(화면이 켜져 있는 동안 1분마다 확인, 당겨서 새로고침은 즉시)
+  - 현재 위치가 3km 이상 바뀌면 30분이 지나지 않았어도 새로 받음
+  - 오프라인이면 저장된 날씨를 보여주고, 시간이 지난 만큼 현재 날씨는 그 시각의 시간별 예보로 바꿔 보여줌
+  - 받은 지 6시간이 지난 날씨에는 현재 날씨 아래에 `M월 d일 HH:mm 기준 날씨` 표시
+  - 받은 지 5일이 지난 캐시는 만료되어 삭제
 - **접히는 현재 날씨 헤더**: CollapsingToolbarLayout(exitUntilCollapsed) 방식, 스크롤 시 완전히 접히고 상단바에 요약 표시
 - **그리드 카드 목록** (가로 600dp 이상 2열, 그 외 1열 · 라운드 코너 카드)
   1. **체감 보정 예보**: 큰 체감온도, 구간별 대표색, 흐르는 브러쉬 그라데이션 브리핑, 12시간 전~48시간 후 시간대 박스, ⓘ 구간 산정 그래프(기본/내 체감)
@@ -35,7 +42,7 @@ app/src/main/java/com/zozi/feels_likeweather/
 │   ├── model/      날씨 모델, WMO 날씨 코드
 │   ├── remote/     OpenMeteoClient (HttpURLConnection + org.json)
 │   ├── location/   LocationClient(Fused), PlaceNameResolver(Geocoder)
-│   ├── cache/      ForecastCache (위젯용 마지막 예보)
+│   ├── local/      WeatherDatabase · WeatherStore (지역별 날씨 캐시, 만료 5일)
 │   └── prefs/      AppPreferences (DataStore: 프로필, 설문, 브리핑 고정, 지역, 테마)
 ├── domain/         FeelsBand/Thresholds, FeelsLearner, Briefings, TimeSlots, Profile, Clothing
 └── ui/
