@@ -30,6 +30,7 @@ import com.zozi.feels_likeweather.R
 import com.zozi.feels_likeweather.domain.AgeGroup
 import com.zozi.feels_likeweather.domain.ClothingItem
 import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.imageNames
 
 /** 지원하는 위젯 크기(반응형 기준점). 런처 칸 수는 대략적인 값이다. */
 object WidgetSizes {
@@ -118,7 +119,7 @@ fun EmptyState(colors: WidgetColors) {
 @SuppressLint("DiscouragedApi")
 fun clothingImageRes(context: Context, item: ClothingItem, ageGroup: AgeGroup): Int? {
     val res = context.resources
-    return listOf("cloth_${ageGroup.name.lowercase()}_${item.key}", "cloth_${item.key}")
+    return item.imageNames(ageGroup)
         .firstNotNullOfOrNull { name -> res.getIdentifier(name, "drawable", context.packageName).takeIf { it != 0 } }
 }
 
