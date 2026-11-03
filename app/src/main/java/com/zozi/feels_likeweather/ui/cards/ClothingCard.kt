@@ -84,6 +84,7 @@ import com.zozi.feels_likeweather.domain.FeelsBand
 import com.zozi.feels_likeweather.domain.FeelsThresholds
 import com.zozi.feels_likeweather.domain.Profile
 import com.zozi.feels_likeweather.domain.TimeSlots
+import com.zozi.feels_likeweather.domain.imageNames
 import com.zozi.feels_likeweather.ui.components.horizontalFadingEdges
 import com.zozi.feels_likeweather.ui.main.FeelsUi
 import com.zozi.feels_likeweather.ui.theme.composeColor
@@ -220,7 +221,7 @@ fun ClothingCard(
         val needed = recommendation.conditionalItems.filter { it.needed }
         val unneeded = recommendation.conditionalItems.filterNot { it.needed }
         val valid = needed.map { TileData(it.item, it.reason, emphasized = true) } +
-            recommendation.items.map { TileData(it.item, it.note) }
+            recommendation.items.map { TileData(it.item, it.alternativeNote ?: it.note, alternative = it.isAlternative) }
         BoxWithConstraints(Modifier.padding(horizontal = 20.dp)) {
             val columns = if (valid.size <= 9) 3 else 4
             val tileWidth = (maxWidth - TileSpacing * (columns - 1)) / columns
@@ -461,6 +462,8 @@ private data class TileData(
     val caption: String? = null,
     val emphasized: Boolean = false,
     val dimmed: Boolean = false,
+    /** 다른 옷 대신 골라도 되는 선택 아이템 ("또는" 표시). */
+    val alternative: Boolean = false,
 )
 
 @Composable
@@ -478,7 +481,26 @@ private fun ClothingTile(tile: TileData, ageGroup: AgeGroup, width: Dp) {
             border = if (tile.emphasized) BorderStroke(1.5.dp, scheme.primary) else null,
             modifier = Modifier.size(width),
         ) {
-            Box(contentAlignment = Alignment.Center) { ClothingImage(tile.item, ageGroup, width * 0.78f) }
+            Box(contentAlignment = Alignment.Center) {
+                ClothingImage(tile.item, ageGroup, width * 0.78f)
+                if (tile.alternative) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = scheme.secondaryContainer,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp),
+                    ) {
+                        Text(
+                            "또는",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -503,7 +525,7 @@ private fun ClothingTile(tile: TileData, ageGroup: AgeGroup, width: Dp) {
 
 /**
  * 옷 이미지. 생성 이미지(drawable)가 추가되면 자동으로 사용한다.
- * 탐색 순서: `cloth_<연령대>_<key>` → `cloth_<key>` → 기본 아이콘.
+ * 탐색 순서: [imageNames] (연령대 전용 → 비슷한 연령대 → 공용) → 기본 아이콘.
  */
 @SuppressLint("DiscouragedApi", "LocalContextGetResourceValueCall")
 @Composable
@@ -512,7 +534,7 @@ private fun ClothingImage(item: ClothingItem, ageGroup: AgeGroup, size: Dp) {
     val resId = remember(item, ageGroup) {
         val res = context.resources
         val pkg = context.packageName
-        listOf("cloth_${ageGroup.name.lowercase()}_${item.key}", "cloth_${item.key}")
+        item.imageNames(ageGroup)
             .firstNotNullOfOrNull { name -> res.getIdentifier(name, "drawable", pkg).takeIf { it != 0 } }
     }
     if (resId != null) {
