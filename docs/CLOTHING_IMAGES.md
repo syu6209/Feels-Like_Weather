@@ -5,11 +5,15 @@
 
 ## 파일 이름 규칙
 
-탐색 순서 (`ClothingCard.kt` 의 `ClothingImage`):
+탐색 순서:
 
 1. `cloth_<연령대>_<key>.png` — 연령대 전용 이미지 (예: `cloth_infant_padding.png`)
-2. `cloth_<key>.png` — 공용 이미지 (예: `cloth_umbrella.png`)
-3. 둘 다 없으면 기본 아이콘
+2. 비슷한 연령대 이미지 — 유아는 아동(`cloth_child_<key>`), 중장년은 성인(`cloth_adult_<key>`)
+3. `cloth_<key>.png` — 공용 이미지 (예: `cloth_umbrella.png`)
+4. 모두 없으면 기본 아이콘
+
+탐색 순서는 `ClothingItem.imageNames()` 한 곳에서 정하고, 앱 카드와 위젯이 함께 씁니다.
+`ClothingImagesTest` 가 추천될 수 있는 모든 (연령대, 아이템)에 이미지가 있는지 확인합니다.
 
 - 연령대: `infant`(유아), `child`(아동), `adult`(성인), `senior`(중장년)
 - 파일명은 소문자·숫자·밑줄만 가능 (안드로이드 리소스 규칙)
@@ -21,8 +25,9 @@
 ### 이미지 추가·교체 시 체크리스트
 
 1. 투명 배경인지, 옆 아이템 조각이 테두리에 남아 있지 않은지 확인 (시트에서 잘라낸 이미지는 가장자리에 조각이 남기 쉬움)
-2. 512×512 로 줄이고 WebP 로 변환 (예: `cwebp -q 90 -resize 512 512 in.png -o cloth_adult_coat.webp`)
-3. `./gradlew testDebugUnitTest` 실행 후 `app/build/screenshots/04_clothing.png` 에서 표시 확인
+2. **이미지가 아이템 이름과 맞는지** 확인 — 소매 길이(민소매/반팔/긴팔), 한 벌(롬퍼) 여부, 두께가 이름과 다르면 추천 내용과 그림이 어긋납니다
+3. 512×512 로 줄이고 WebP 로 변환 (예: `cwebp -q 90 -resize 512 512 in.png -o cloth_adult_coat.webp`)
+4. `./gradlew testDebugUnitTest` 실행 후 `app/build/screenshots/04_clothing.png` 에서 표시 확인
 
 ## 공통 프롬프트 (Grok / Codex 등)
 
@@ -36,14 +41,16 @@ soft flat 3D style, gentle studio lighting, pastel colors, centered, transparent
 ## 연령대별 필요 이미지
 
 
-### 유아 (`infant`) — 16개
+### 유아 (`infant`) — 16개 + 아동 이미지 대체
+
+반팔 티셔츠·얇은 긴팔·면바지·기모 바지처럼 유아 전용 이미지가 없는 아이템은 아동 이미지를 씁니다.
 
 | 파일명 | 아이템 | {ITEM} 예시 |
 |---|---|---|
-| `cloth_infant_romper.png` | 반팔 바디수트 | romper for a toddler (age 1-6) |
+| `cloth_infant_romper.png` | 민소매 롬퍼 (상·하의 대신 선택) | sleeveless one-piece romper for a toddler (age 1-6) |
 | `cloth_infant_sandals.png` | 샌들 | sandals for a toddler (age 1-6) |
 | `cloth_infant_shorts.png` | 반바지 | shorts for a toddler (age 1-6) |
-| `cloth_infant_long_romper.png` | 긴팔 우주복 | long romper for a toddler (age 1-6) |
+| `cloth_infant_overalls.png` | 멜빵바지 (면바지 대신 선택) | overalls with shoulder straps for a toddler (age 1-6) |
 | `cloth_infant_cardigan.png` | 가디건 | cardigan for a toddler (age 1-6) |
 | `cloth_infant_sneakers.png` | 운동화 | sneakers for a toddler (age 1-6) |
 | `cloth_infant_vest.png` | 경량 조끼 | vest for a toddler (age 1-6) |

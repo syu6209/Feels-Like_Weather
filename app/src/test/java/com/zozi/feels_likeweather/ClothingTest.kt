@@ -6,6 +6,9 @@ import com.zozi.feels_likeweather.domain.AgeGroup
 import com.zozi.feels_likeweather.domain.ClothingItem
 import com.zozi.feels_likeweather.domain.ClothingRecommender
 import com.zozi.feels_likeweather.domain.FeelsBand
+import com.zozi.feels_likeweather.domain.imageNames
+import com.zozi.feels_likeweather.domain.isOnePiece
+import com.zozi.feels_likeweather.domain.layer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -64,5 +67,46 @@ class ClothingTest {
         val window = ActivityWindow("오늘", listOf(hour(12, 30.0, uv = 9.0)))
         val rec = ClothingRecommender.recommend(AgeGroup.INFANT, null, FeelsBand.HOT, window)
         assertTrue(rec.conditionalItems.none { it.item == ClothingItem.SUNGLASSES })
+    }
+
+    @Test
+    fun alternativesReplaceAnItemInTheSameLayer() {
+        AgeGroup.entries.forEach { age ->
+            FeelsBand.entries.forEach { band ->
+                val picks = ClothingRecommender.picksFor(age, band)
+                picks.filter { it.insteadOf != null }.forEach { alt ->
+                    val primary = alt.insteadOf!!
+                    assertTrue("$age/$band: ${alt.item} 대신할 $primary 가 없음", picks.any { it.item == primary && it.insteadOf == null })
+                    // 같은 층에서 하나를 고르거나, 원피스형이 상·하의를 대신한다.
+                    assertTrue("$age/$band: ${alt.item}", alt.item.layer == primary.layer || alt.item.isOnePiece)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun infantGetsTopAndBottomWithOptionalRomper() {
+        val rec = ClothingRecommender.recommend(AgeGroup.INFANT, null, FeelsBand.HOT, ActivityWindow("오늘", listOf(hour(12, 28.0))))
+        val items = rec.items.associateBy { it.item }
+        assertFalse(items.getValue(ClothingItem.SHORT_SLEEVE).isAlternative)
+        assertFalse(items.getValue(ClothingItem.SHORTS).isAlternative)
+        assertEquals("상·하의 대신", items.getValue(ClothingItem.ROMPER).alternativeNote)
+    }
+
+    @Test
+    fun coatIsAnAlternativeToTrenchCoat() {
+        val rec = ClothingRecommender.recommend(AgeGroup.ADULT, null, FeelsBand.CHILLY, ActivityWindow("오늘", listOf(hour(9, 8.0))))
+        val coat = rec.items.first { it.item == ClothingItem.COAT }
+        assertEquals(ClothingItem.TRENCH_COAT, coat.insteadOf)
+        assertEquals("트렌치코트 대신", coat.alternativeNote)
+    }
+
+    @Test
+    fun infantImagesFallBackToChildThenCommon() {
+        assertEquals(
+            listOf("cloth_infant_long_sleeve", "cloth_child_long_sleeve", "cloth_long_sleeve"),
+            ClothingItem.LONG_SLEEVE.imageNames(AgeGroup.INFANT),
+        )
+        assertEquals(listOf("cloth_adult_coat", "cloth_coat"), ClothingItem.COAT.imageNames(AgeGroup.ADULT))
     }
 }

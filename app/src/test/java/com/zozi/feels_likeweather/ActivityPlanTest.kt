@@ -57,7 +57,9 @@ class ActivityPlanTest {
         assertTrue(outfit.any { it.item == ClothingItem.COTTON_PANTS })
         val outers = outfit.filter { it.item.layer == ClothingLayer.OUTER }
         assertEquals(listOf(ClothingItem.TRENCH_COAT, ClothingItem.COAT), outers.map { it.item })
-        assertTrue(outers.all { it.note == plan.outerNote })
+        // 겉옷 안내는 기본 겉옷에, 코트는 '트렌치코트 대신' 고를 수 있는 선택 아이템
+        assertEquals(plan.outerNote, outers.first().note)
+        assertEquals(ClothingItem.TRENCH_COAT, outers.last().insteadOf)
         // 쌀쌀함 기준 상의(니트)·하의(청바지)는 섞이지 않는다
         assertFalse(outfit.any { it.item == ClothingItem.KNIT || it.item == ClothingItem.JEANS })
     }

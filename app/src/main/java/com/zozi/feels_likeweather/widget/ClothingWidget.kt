@@ -102,7 +102,9 @@ private fun ClothingContent(model: ClothingWidgetModel?, settings: WidgetSetting
             return@WidgetFrame
         }
         val rec = model.recommendation
+        // 위젯은 칸이 좁으므로 '대신' 고를 수 있는 선택 아이템은 빼고 기본 아이템만 보여준다.
         val clothes = rec.items
+            .filterNot { it.isAlternative }
             .sortedBy { LayerOrder.indexOf(it.item.layer) }
             .map { WidgetItem(it.item, it.note, false) }
         val carry = rec.conditionalItems.filter { it.needed }.map { it.item.label }

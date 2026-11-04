@@ -33,8 +33,8 @@ enum class ClothingItem(val key: String, val label: String, val conditional: Boo
     COTTON_PANTS("cotton_pants", "면바지"),
     JEANS("jeans", "청바지"),
     FLEECE_PANTS("fleece_pants", "기모 바지"),
-    ROMPER("romper", "반팔 바디수트"),
-    LONG_ROMPER("long_romper", "긴팔 우주복"),
+    ROMPER("romper", "민소매 롬퍼"),
+    OVERALLS("overalls", "멜빵바지"),
     SNOWSUIT("snowsuit", "방한 우주복"),
     SANDALS("sandals", "샌들"),
     SNEAKERS("sneakers", "운동화"),
@@ -61,16 +61,56 @@ enum class ClothingLayer { INNER, TOP, OUTER, BOTTOM, SHOES, ACCESSORY, WEATHER 
 val ClothingItem.layer: ClothingLayer
     get() = when (this) {
         THERMAL -> ClothingLayer.INNER
-        SLEEVELESS, SHORT_SLEEVE, LINEN_SHIRT, LONG_SLEEVE, SWEATSHIRT, KNIT, ROMPER, LONG_ROMPER -> ClothingLayer.TOP
+        SLEEVELESS, SHORT_SLEEVE, LINEN_SHIRT, LONG_SLEEVE, SWEATSHIRT, KNIT, ROMPER -> ClothingLayer.TOP
         CARDIGAN, VEST, LIGHT_JACKET, TRENCH_COAT, COAT, LIGHT_PADDING, PADDING, LONG_PADDING, SNOWSUIT -> ClothingLayer.OUTER
-        SHORTS, COTTON_PANTS, JEANS, FLEECE_PANTS -> ClothingLayer.BOTTOM
+        SHORTS, COTTON_PANTS, JEANS, FLEECE_PANTS, OVERALLS -> ClothingLayer.BOTTOM
         SANDALS, SNEAKERS, WINTER_BOOTS -> ClothingLayer.SHOES
         SCARF, NECK_WARMER, GLOVES, BEANIE -> ClothingLayer.ACCESSORY
         else -> ClothingLayer.WEATHER
     }
 
-/** 추천 옷 하나. [note] 는 "출발할 때 · 벗기 쉬운 겉옷" 처럼 타일 아래에 붙는 설명. */
-data class RecommendedItem(val item: ClothingItem, val note: String? = null)
+/** 상의와 하의를 한 벌로 대신하는 옷(원피스형). */
+val ClothingItem.isOnePiece: Boolean get() = this == ClothingItem.ROMPER
+
+/**
+ * 옷 이미지 리소스 이름 후보(앞에서부터 찾는다).
+ * 연령대 전용 → (유아는 아동, 중장년은 성인 이미지로 대신) → 공용.
+ */
+fun ClothingItem.imageNames(ageGroup: AgeGroup): List<String> {
+    val similar = when (ageGroup) {
+        AgeGroup.INFANT -> AgeGroup.CHILD
+        AgeGroup.SENIOR -> AgeGroup.ADULT
+        else -> null
+    }
+    return listOfNotNull(
+        "cloth_${ageGroup.name.lowercase()}_$key",
+        similar?.let { "cloth_${it.name.lowercase()}_$key" },
+        "cloth_$key",
+    )
+}
+
+/**
+ * 추천표의 한 칸. [insteadOf] 가 있으면 그 옷 "대신" 골라도 되는 선택 아이템이다
+ * (같은 층에서 둘 중 하나, 또는 원피스형이 상·하의를 대신).
+ */
+data class ClothingPick(val item: ClothingItem, val insteadOf: ClothingItem? = null)
+
+/**
+ * 추천 옷 하나.
+ * @param note "출발할 때 · 벗기 쉬운 겉옷" 처럼 타일 아래에 붙는 설명
+ * @param insteadOf 이 옷 대신 고를 수 있는 선택 아이템이면 대신하는 옷
+ */
+data class RecommendedItem(
+    val item: ClothingItem,
+    val note: String? = null,
+    val insteadOf: ClothingItem? = null,
+) {
+    val isAlternative: Boolean get() = insteadOf != null
+
+    /** 선택 아이템 설명. 예) "트렌치코트 대신", 원피스형은 "상·하의 대신" */
+    val alternativeNote: String?
+        get() = insteadOf?.let { if (item.isOnePiece) "상·하의 대신" else "${it.label} 대신" }
+}
 
 data class ConditionalItem(val item: ClothingItem, val needed: Boolean, val reason: String)
 
@@ -148,48 +188,66 @@ data class ClothingRecommendation(
  */
 object ClothingRecommender {
 
-    private val table: Map<AgeGroup, Map<FeelsBand, List<ClothingItem>>> =
+    /**
+     * 연령대 × 구간 추천표. 순서가 곧 표시 순서다.
+     * 같은 층(상의·하의·겉옷)에 둘 이상이면 하나는 기본, 나머지는 `대신` 으로 표시한 선택 아이템이다.
+     * 같은 층이라도 겹쳐 입는 옷(예: 쌀쌀함의 긴팔 + 맨투맨)은 선택이 아니라 함께 추천한다.
+     */
+    private val table: Map<AgeGroup, Map<FeelsBand, List<ClothingPick>>> =
         mapOf(
             AgeGroup.ADULT to mapOf(
-                FeelsBand.SWELTERING to listOf(SLEEVELESS, SHORT_SLEEVE, SHORTS, SANDALS),
-                FeelsBand.HOT to listOf(SHORT_SLEEVE, LINEN_SHIRT, SHORTS, COTTON_PANTS, SNEAKERS),
-                FeelsBand.WARM to listOf(LONG_SLEEVE, LINEN_SHIRT, CARDIGAN, COTTON_PANTS, SNEAKERS),
-                FeelsBand.COOL to listOf(SWEATSHIRT, KNIT, LIGHT_JACKET, JEANS, SNEAKERS),
-                FeelsBand.CHILLY to listOf(KNIT, TRENCH_COAT, COAT, JEANS, SNEAKERS),
-                FeelsBand.COLD to listOf(THERMAL, KNIT, PADDING, FLEECE_PANTS, SCARF, GLOVES, WINTER_BOOTS),
-                FeelsBand.FREEZING to listOf(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
+                FeelsBand.SWELTERING to picks(SHORT_SLEEVE, SLEEVELESS.instead(SHORT_SLEEVE), SHORTS, SANDALS),
+                FeelsBand.HOT to picks(SHORT_SLEEVE, LINEN_SHIRT.instead(SHORT_SLEEVE), SHORTS, COTTON_PANTS.instead(SHORTS), SNEAKERS),
+                FeelsBand.WARM to picks(LONG_SLEEVE, LINEN_SHIRT.instead(LONG_SLEEVE), CARDIGAN, COTTON_PANTS, SNEAKERS),
+                FeelsBand.COOL to picks(SWEATSHIRT, KNIT.instead(SWEATSHIRT), LIGHT_JACKET, JEANS, SNEAKERS),
+                FeelsBand.CHILLY to picks(KNIT, TRENCH_COAT, COAT.instead(TRENCH_COAT), JEANS, SNEAKERS),
+                FeelsBand.COLD to picks(THERMAL, KNIT, PADDING, FLEECE_PANTS, SCARF, GLOVES, WINTER_BOOTS),
+                FeelsBand.FREEZING to picks(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
             ),
             AgeGroup.CHILD to mapOf(
-                FeelsBand.SWELTERING to listOf(SHORT_SLEEVE, SHORTS, SANDALS),
-                FeelsBand.HOT to listOf(SHORT_SLEEVE, SHORTS, SNEAKERS),
-                FeelsBand.WARM to listOf(SHORT_SLEEVE, CARDIGAN, COTTON_PANTS, SNEAKERS),
-                FeelsBand.COOL to listOf(LONG_SLEEVE, SWEATSHIRT, LIGHT_JACKET, COTTON_PANTS, SNEAKERS),
-                FeelsBand.CHILLY to listOf(LONG_SLEEVE, SWEATSHIRT, LIGHT_PADDING, JEANS, SNEAKERS),
-                FeelsBand.COLD to listOf(THERMAL, SWEATSHIRT, PADDING, FLEECE_PANTS, BEANIE, GLOVES, WINTER_BOOTS),
-                FeelsBand.FREEZING to listOf(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
+                FeelsBand.SWELTERING to picks(SHORT_SLEEVE, SHORTS, SANDALS),
+                FeelsBand.HOT to picks(SHORT_SLEEVE, SHORTS, SNEAKERS),
+                FeelsBand.WARM to picks(SHORT_SLEEVE, CARDIGAN, COTTON_PANTS, SNEAKERS),
+                FeelsBand.COOL to picks(LONG_SLEEVE, SWEATSHIRT.instead(LONG_SLEEVE), LIGHT_JACKET, COTTON_PANTS, SNEAKERS),
+                FeelsBand.CHILLY to picks(LONG_SLEEVE, SWEATSHIRT, LIGHT_PADDING, JEANS, SNEAKERS),
+                FeelsBand.COLD to picks(THERMAL, SWEATSHIRT, PADDING, FLEECE_PANTS, BEANIE, GLOVES, WINTER_BOOTS),
+                FeelsBand.FREEZING to picks(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
             ),
             AgeGroup.INFANT to mapOf(
-                FeelsBand.SWELTERING to listOf(ROMPER, SANDALS),
-                FeelsBand.HOT to listOf(ROMPER, SHORTS, SANDALS),
-                FeelsBand.WARM to listOf(LONG_ROMPER, CARDIGAN, SNEAKERS),
-                FeelsBand.COOL to listOf(LONG_ROMPER, VEST, LIGHT_JACKET, SNEAKERS),
-                FeelsBand.CHILLY to listOf(LONG_ROMPER, SWEATSHIRT, LIGHT_PADDING, BEANIE, SNEAKERS),
-                FeelsBand.COLD to listOf(THERMAL, LONG_ROMPER, SNOWSUIT, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
-                FeelsBand.FREEZING to listOf(THERMAL, LONG_ROMPER, SNOWSUIT, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
+                FeelsBand.SWELTERING to picks(SHORT_SLEEVE, SHORTS, ROMPER.instead(SHORT_SLEEVE), SANDALS),
+                FeelsBand.HOT to picks(SHORT_SLEEVE, SHORTS, ROMPER.instead(SHORT_SLEEVE), SNEAKERS),
+                FeelsBand.WARM to picks(LONG_SLEEVE, COTTON_PANTS, OVERALLS.instead(COTTON_PANTS), CARDIGAN, SNEAKERS),
+                FeelsBand.COOL to picks(LONG_SLEEVE, COTTON_PANTS, OVERALLS.instead(COTTON_PANTS), LIGHT_JACKET, VEST.instead(LIGHT_JACKET), SNEAKERS),
+                FeelsBand.CHILLY to picks(LONG_SLEEVE, SWEATSHIRT, FLEECE_PANTS, LIGHT_PADDING, BEANIE, SNEAKERS),
+                FeelsBand.COLD to picks(THERMAL, SWEATSHIRT, FLEECE_PANTS, SNOWSUIT, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
+                FeelsBand.FREEZING to picks(THERMAL, SWEATSHIRT, FLEECE_PANTS, SNOWSUIT, BEANIE, NECK_WARMER, GLOVES, WINTER_BOOTS),
             ),
             AgeGroup.SENIOR to mapOf(
-                FeelsBand.SWELTERING to listOf(SHORT_SLEEVE, LINEN_SHIRT, COTTON_PANTS, SANDALS),
-                FeelsBand.HOT to listOf(SHORT_SLEEVE, LINEN_SHIRT, COTTON_PANTS, SNEAKERS),
-                FeelsBand.WARM to listOf(LONG_SLEEVE, CARDIGAN, COTTON_PANTS, SNEAKERS),
-                FeelsBand.COOL to listOf(KNIT, VEST, LIGHT_JACKET, COTTON_PANTS, SNEAKERS),
-                FeelsBand.CHILLY to listOf(THERMAL, KNIT, COAT, FLEECE_PANTS, SCARF, SNEAKERS),
-                FeelsBand.COLD to listOf(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
-                FeelsBand.FREEZING to listOf(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
+                FeelsBand.SWELTERING to picks(SHORT_SLEEVE, LINEN_SHIRT.instead(SHORT_SLEEVE), COTTON_PANTS, SANDALS),
+                FeelsBand.HOT to picks(SHORT_SLEEVE, LINEN_SHIRT.instead(SHORT_SLEEVE), COTTON_PANTS, SNEAKERS),
+                FeelsBand.WARM to picks(LONG_SLEEVE, CARDIGAN, COTTON_PANTS, SNEAKERS),
+                FeelsBand.COOL to picks(KNIT, LIGHT_JACKET, VEST.instead(LIGHT_JACKET), COTTON_PANTS, SNEAKERS),
+                FeelsBand.CHILLY to picks(THERMAL, KNIT, COAT, FLEECE_PANTS, SCARF, SNEAKERS),
+                FeelsBand.COLD to picks(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
+                FeelsBand.FREEZING to picks(THERMAL, KNIT, LONG_PADDING, FLEECE_PANTS, BEANIE, SCARF, GLOVES, WINTER_BOOTS),
             ),
         )
 
-    fun itemsFor(ageGroup: AgeGroup, band: FeelsBand): List<ClothingItem> =
+    private fun picks(vararg entries: Any): List<ClothingPick> = entries.map {
+        when (it) {
+            is ClothingPick -> it
+            is ClothingItem -> ClothingPick(it)
+            else -> error("unsupported $it")
+        }
+    }
+
+    private fun ClothingItem.instead(of: ClothingItem) = ClothingPick(this, insteadOf = of)
+
+    fun picksFor(ageGroup: AgeGroup, band: FeelsBand): List<ClothingPick> =
         table.getValue(ageGroup).getValue(band)
+
+    fun itemsFor(ageGroup: AgeGroup, band: FeelsBand): List<ClothingItem> =
+        picksFor(ageGroup, band).map { it.item }
 
     /**
      * @param plan 활동 시간 체감 분석. 있으면 구간 변화에 맞춘 겹쳐 입기 추천을 하고,
@@ -208,7 +266,7 @@ object ClothingRecommender {
             .sortedByDescending { it.needed }
         return ClothingRecommendation(
             band = core,
-            items = if (plan == null) itemsFor(ageGroup, core).map { RecommendedItem(it) } else outfit(ageGroup, plan),
+            items = if (plan == null) picksFor(ageGroup, core).map { RecommendedItem(it.item, insteadOf = it.insteadOf) } else outfit(ageGroup, plan),
             conditionalItems = conditional,
             tips = plan?.advice.orEmpty() + tips(ageGroup, cold, warm, window),
             window = window,
@@ -224,27 +282,33 @@ object ClothingRecommender {
      *  - 가장 더운 구간이 더 덥다면 그 구간의 가장 가벼운 상의를 "더울 땐 이것만" 으로 추가
      */
     fun outfit(ageGroup: AgeGroup, plan: ActivityPlan): List<RecommendedItem> {
-        val core = itemsFor(ageGroup, plan.coreBand)
-        if (plan.bandSpan == 0) return core.map { RecommendedItem(it) }
+        val core = picksFor(ageGroup, plan.coreBand)
+        if (plan.bandSpan == 0) return core.map { RecommendedItem(it.item, insteadOf = it.insteadOf) }
 
-        val cold = itemsFor(ageGroup, plan.coldBand)
-        val outer = itemsFor(ageGroup, plan.outerBand)
-        val warm = itemsFor(ageGroup, plan.warmBand)
+        val cold = picksFor(ageGroup, plan.coldBand)
+        val outer = picksFor(ageGroup, plan.outerBand)
+        val warm = picksFor(ageGroup, plan.warmBand)
         val changes = plan.coldBand != plan.coreBand
         val result = LinkedHashMap<ClothingItem, RecommendedItem>()
-        fun add(item: ClothingItem, note: String? = null) {
-            if (item !in result) result[item] = RecommendedItem(item, note)
+        fun add(pick: ClothingPick, note: String? = null) {
+            // 선택 아이템에는 '대신' 설명이 붙으므로 겉옷 안내 같은 설명은 기본 아이템에만 단다.
+            if (pick.item !in result) {
+                result[pick.item] = RecommendedItem(pick.item, if (pick.insteadOf == null) note else null, pick.insteadOf)
+            }
         }
 
-        core.filter { it.layer in BASE_LAYERS }.forEach { add(it) }
-        (if (changes) outer else core).filter { it.layer == ClothingLayer.OUTER }
+        core.filter { it.item.layer in BASE_LAYERS }.forEach { add(it) }
+        (if (changes) outer else core).filter { it.item.layer == ClothingLayer.OUTER }
             .forEach { add(it, if (changes) plan.outerNote else null) }
-        (cold + core).filter { it.layer == ClothingLayer.ACCESSORY }
-            .forEach { add(it, if (changes && it !in core) "추울 때 · 가방에" else null) }
+        val coreItems = core.map { it.item }
+        (cold + core).filter { it.item.layer == ClothingLayer.ACCESSORY }
+            .forEach { add(it, if (changes && it.item !in coreItems) "추울 때 · 가방에" else null) }
         if (plan.warmBand.ordinal > plan.coreBand.ordinal) {
-            warm.firstOrNull { it.layer == ClothingLayer.TOP && it !in result }?.let { add(it, "더울 땐 이것만") }
+            warm.firstOrNull { it.item.layer == ClothingLayer.TOP && it.insteadOf == null && it.item !in result }
+                ?.let { add(it, "더울 땐 이것만") }
         }
-        return result.values.toList()
+        // 대신할 기본 아이템이 빠졌으면 선택 아이템이 아니라 그냥 추천이다.
+        return result.values.map { if (it.insteadOf != null && it.insteadOf !in result) it.copy(insteadOf = null) else it }
     }
 
     private val BASE_LAYERS = setOf(ClothingLayer.INNER, ClothingLayer.TOP, ClothingLayer.BOTTOM, ClothingLayer.SHOES)
